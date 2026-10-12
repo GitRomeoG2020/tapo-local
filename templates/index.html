@@ -3,16 +3,18 @@
 <h1>Paired cameras and doorbells</h1>
 {% if devices %}
   <p class="muted">Listed from {{ source }}.</p>
-  {% for device in devices %}
-    <a class="card" href="/devices/{{ device.device_id }}">
-      <strong>{{ device.name }}</strong>
-      <div class="meta">
-        <span>Model {{ device.model }}</span>
-        <span>Hub storage: {{ device.hub_storage }}</span>
-      </div>
-    </a>
-  {% endfor %}
+  <div class="cards">
+    {% for device in devices %}
+      <a class="card" href="/devices/{{ device.device_id }}">
+        <strong>{{ device.name }}</strong>
+        <div class="meta">
+          <span>Model {{ device.model }}</span>
+          <span class="status{% if device.hub_storage != 'on' %} off{% endif %}">Hub storage: {{ device.hub_storage }}</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
 {% else %}
-  <p>No cameras or doorbells were paired to this hub.</p>
+  <p class="empty">No cameras or doorbells were paired to this hub.</p>
 {% endif %}
 {% endblock %}

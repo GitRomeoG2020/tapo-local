@@ -8,37 +8,41 @@
   <p class="error">{{ error }}</p>
 {% endif %}
 {% if devices %}
-  {% for device in devices %}
-    <div class="card">
-      <strong>{{ device.name }}</strong>
-      <div class="meta">
-        <span>Model {{ device.model }}</span>
-        <span>{{ device.status }}</span>
-        <span>{{ device.ip }}</span>
-        {% if device.brightness is not none %}
-          <span>Brightness {{ device.brightness }}%</span>
+  <div class="cards">
+    {% for device in devices %}
+      <div class="card">
+        <div class="card-top">
+          <strong>{{ device.name }}</strong>
+          <span class="status{% if not device.online %} off{% endif %}">{{ device.status }}</span>
+        </div>
+        <div class="meta">
+          <span>Model {{ device.model }}</span>
+          <span>{{ device.ip }}</span>
+          {% if device.brightness is not none %}
+            <span>Brightness {{ device.brightness }}%</span>
+          {% endif %}
+        </div>
+        {% if device.can_switch or device.can_dim %}
+          <form class="controls" method="post" action="/controls/power">
+            <input type="hidden" name="ip" value="{{ device.ip }}">
+            <input type="hidden" name="child_id" value="{{ device.child_id }}">
+            {% if device.can_switch %}
+              <button type="submit" name="action" value="on">On</button>
+              <button class="secondary" type="submit" name="action" value="off">Off</button>
+            {% endif %}
+            {% if device.can_dim %}
+              <label>
+                Brightness
+                <input type="number" name="brightness" min="1" max="100" value="{{ device.brightness_input }}">
+              </label>
+              <button type="submit" name="action" value="brightness">Set brightness</button>
+            {% endif %}
+          </form>
         {% endif %}
       </div>
-      {% if device.can_switch or device.can_dim %}
-        <form class="controls" method="post" action="/controls/power">
-          <input type="hidden" name="ip" value="{{ device.ip }}">
-          <input type="hidden" name="child_id" value="{{ device.child_id }}">
-          {% if device.can_switch %}
-            <button type="submit" name="action" value="on">On</button>
-            <button type="submit" name="action" value="off">Off</button>
-          {% endif %}
-          {% if device.can_dim %}
-            <label>
-              Brightness
-              <input type="number" name="brightness" min="1" max="100" value="{{ device.brightness_input }}">
-            </label>
-            <button type="submit" name="action" value="brightness">Set brightness</button>
-          {% endif %}
-        </form>
-      {% endif %}
-    </div>
-  {% endfor %}
+    {% endfor %}
+  </div>
 {% elif not error %}
-  <p>No plugs or lights were found on this scan.</p>
+  <p class="empty">No plugs or lights were found on this scan.</p>
 {% endif %}
 {% endblock %}

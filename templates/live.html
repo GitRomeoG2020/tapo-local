@@ -3,16 +3,18 @@
 <h1>Live view</h1>
 <p class="muted">Each camera opens in go2rtc on this computer, port 1984.</p>
 {% if streams %}
-  {% for stream in streams %}
-    <a class="card" href="{{ stream.url }}">
-      <strong>{{ stream.label }}</strong>
-      <div class="meta">
-        <span>{{ stream.name }}</span>
-      </div>
-    </a>
-  {% endfor %}
+  <div class="cards">
+    {% for stream in streams %}
+      <a class="card" href="{{ stream.url }}">
+        <strong>{{ stream.label }}</strong>
+        <div class="meta">
+          <span>{{ stream.name }}</span>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
 {% else %}
-  <p>No streams are configured in go2rtc.</p>
+  <p class="empty">No streams are configured in go2rtc.</p>
 {% endif %}
-<p><a href="{{ go2rtc_url }}">Open the go2rtc UI</a></p>
+<p class="page-actions"><a class="button-link" href="{{ go2rtc_url }}">Open the go2rtc UI</a></p>
 {% endblock %}

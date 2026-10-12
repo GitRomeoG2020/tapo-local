@@ -22,7 +22,7 @@
     {% endfor %}
   </ul>
 {% else %}
-  <p>No recording days in this window.</p>
+  <p class="empty">No recording days in this window.</p>
 {% endif %}
 
 {% if recordings.selected_day %}
@@ -117,7 +117,7 @@
               <form method="post" action="/devices/{{ recordings.device.device_id }}/download">
                 <input type="hidden" name="start" value="{{ clip.start_value }}">
                 <input type="hidden" name="end" value="{{ clip.end_value }}">
-                <button type="submit">Download</button>
+                <button class="secondary" type="submit">Download</button>
               </form>
             </td>
           </tr>
@@ -126,6 +126,6 @@
     </table>
   </div>
 {% else %}
-  <p>No clips on this day.</p>
+  <p class="empty">No clips on this day.</p>
 {% endif %}
 {% endblock %}
