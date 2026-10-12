@@ -29,6 +29,7 @@ See [TAPO_RESOURCES.md](TAPO_RESOURCES.md) for libraries, protocols, and related
 
 ## Getting Started
 
+- Install, test, and run the dashboard with [INSTALL.md](INSTALL.md)
 - Review [INITIAL_PLAN.md](INITIAL_PLAN.md)
 - Use the ready-made prompts in [PROMPTS.md](PROMPTS.md)
 - Document device inventory in a new `DEVICES.md` as details are collected
