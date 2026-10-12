@@ -1,81 +1,80 @@
 # Initial Plan — Local Tapo Apps
 
-**Focus**: Local Tapo-related applications first (H500 hub, cameras, sensors, plugs).
+**Focus**: Local Tapo-related applications first (H500 hub, cameras, sensors, plugs, lights).
 
-## Phase 0: Inventory & Setup (Immediate)
+**Core principle**: Prefer **dynamic discovery**. The application should query the H500 (and later other devices) at runtime for the current list of paired/connected devices rather than relying on static inventory files.
 
-- [ ] Document all Tapo devices (model, IP, role, firmware if known)
-- [ ] Note which cameras are paired to the H500
-- [ ] Confirm Camera Account credentials exist for cameras that need RTSP
-- [ ] Verify network reachability (devices respond on expected ports)
-- [ ] Create `DEVICES.md` with the inventory
+## Phase 0: Inventory & Setup
 
-## Phase 1: Connectivity Proof of Concept
+- [x] Confirm H500 IP and basic reachability
+- [x] Verify cloud account credentials work locally
+- [x] Document snapshot of currently paired devices (see DEVICES.md)
+- [ ] Optional: note any non-hub devices that have their own LAN IPs
 
-**Goal**: Confirm we can talk to the H500 and cameras locally.
+## Phase 1: Connectivity Proof of Concept — **COMPLETE**
 
-Priority order (based on prior research):
+**Goal**: Confirm we can talk to the H500 and retrieve camera/recording data locally.
 
-1. **H500 + recordings** using the `tapo` library (Rust or Python)
-   - Connect to H500
-   - List paired cameras
-   - Query recording days
-   - List recent clips
-   - Download one MPEG-TS clip
+Achieved with `scripts/h500_poc.py` + tapo library:
 
-2. **Camera live view**
-   - Test RTSP streams
-   - Optionally test ONVIF
-   - Compare with proprietary media protocol if needed
+- Connected to H500 at 192.168.11.223
+- Listed paired devices via `get_child_device_list_json()` (5 cameras/doorbell)
+- Retrieved recording days and recent clips for each
+- Confirmed hub storage is enabled
 
-3. **Basic device control**
-   - Toggle a plug or read a sensor via the hub or direct connection
+**Deliverable**: Working script + confirmed local access. (Download of a clip not yet implemented but library supports it.)
 
-**Deliverable**: Working scripts + notes on what succeeded / failed on the actual hardware.
+## Phase 2: Dynamic Local Dashboard / App Prototype — **CURRENT**
 
-## Phase 2: Dashboard / App Prototype
+**Preferred approach**: Simple Python web app (FastAPI) that:
 
-Options to evaluate:
+- Dynamically discovers all devices paired to the H500 on each load / refresh
+- Lists cameras, doorbells, and any other child devices
+- Shows recording days and recent clips per device
+- Allows downloading selected clips
+- Remains fully local (credentials only from environment variables)
+- Is structured so it can later include:
+  - Non-camera devices (plugs, lights, sensors) that are either hub children or directly addressable
+  - Basic controls (on/off, status)
+  - Live view where technically possible
 
-- Adapt or extend the existing `tapo-web` project
-- Simple Python web app (FastAPI / Streamlit / Gradio) embedding RTSP (via HLS or WebRTC) + recording timeline
-- Tauri desktop app for a more native feel
-- Rust backend + web frontend if performance or long-term maintainability is prioritized
+Other options (evaluate later if needed):
+- Adapt existing `tapo-web`
+- Tauri desktop app
+- Rust backend
 
-Desired features for the first dashboard:
-- Multi-camera live grid
-- Timeline / calendar for H500 or SD card recordings
-- Basic device controls
-- Fully local
+**Desired first features**:
+- Dynamic device list from hub
+- Recording timeline / clip list per device
+- Clip download
+- Clean, simple UI
+- Easy to extend
 
 ## Phase 3: Expansion
 
+- Live view support (where possible; battery cameras are limited)
+- Direct control of plugs, lights, and other non-camera devices
 - Sensor automations
-- Multi-hub or mixed-device support
 - Notifications / local event handling
-- Integration with broader home automation (later)
+- Multi-hub or broader home automation integration
 
-## Decision Points (Need User Input)
+## Decision Points
 
-- Preferred language / stack for the first app? (Python web, Rust, Tauri, other)
-- Most important first feature?
-  - Live multi-cam view
-  - Recording playback from H500
-  - Sensor / automation control
-  - Overall dashboard
-- Any existing Home Assistant setup we should align with?
+- Stack for first dashboard: Python + FastAPI (recommended for speed of iteration)
+- Priority: Dynamic device listing + recordings first; live view and non-camera controls next
 
 ## Risks & Mitigations
 
-- Firmware breaks local protocol → Keep libraries updated; monitor the main repos
-- Battery cameras have limited local features → Prefer wired cameras for advanced use
-- Credential management → Store locally and securely; never hard-code in committed files
+- Firmware breaks local protocol → Keep `tapo` library updated; monitor the main repos
+- Battery/low-power cameras have limited direct local features → Route through H500; treat live view as a later enhancement
+- Credential management → Environment variables / secure local config only; never commit secrets
+- Static inventory drift → Application must discover devices dynamically
 
-## Success Criteria for Phase 1
+## Success Criteria for Phase 2
 
-- Reliable connection to H500
-- Ability to list and download at least one recording
-- At least one live RTSP stream working
-- Clear notes on any device-specific quirks
+- Dashboard loads and shows the current list of hub-paired devices without manual edits to inventory files
+- User can browse recording days and recent clips
+- At least one clip can be downloaded
+- Adding a new camera or other device to the hub makes it appear in the UI after a refresh
 
 See [PROMPTS.md](PROMPTS.md) for ready-to-use development prompts.
