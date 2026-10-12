@@ -53,7 +53,18 @@ The dashboard and `scripts/h500_poc.py` read three variables. Do not put the pas
 
 A rejected password is not retried. A locked hub refuses further logins for a while.
 
-### Linux and Raspberry Pi
+Put all three variables in the place that matches how you start the dashboard. A value stored for one of these does not fill in the others.
+
+| How you start it | Where the three variables go |
+| --- | --- |
+| Linux or Raspberry Pi, a terminal you open yourself | `export` lines in that terminal, or in `~/.bashrc` |
+| Linux or Raspberry Pi, the systemd service in section 7 | `Environment=` lines in the unit file |
+| Windows, the PowerShell window you already have open | `$env:` assignments in that window |
+| Windows, PowerShell windows you open later | Permanent user environment variables |
+
+### Linux and Raspberry Pi — manual run
+
+Use this when you start uvicorn yourself in a terminal (section 6).
 
 For the current terminal:
 
@@ -63,15 +74,33 @@ export TAPO_PASSWORD="your-tapo-cloud-password"
 export TAPO_HUB_IP="192.168.1.10"
 ```
 
-To keep them after a reboot, add those three `export` lines to the end of `~/.bashrc`, then load them:
+To keep them for every new interactive terminal, add those three `export` lines to the end of `~/.bashrc`, then load them:
 
 ```bash
 source ~/.bashrc
 ```
 
-A systemd service does not read `~/.bashrc`. The unit in section 7 has its own `Environment=` lines. Set the variables in both places when the Pi starts the dashboard on boot.
+`~/.bashrc` is read by interactive bash. It is the right place for a manual run. It is not read by the systemd service.
+
+### Linux and Raspberry Pi — systemd service
+
+Use this when a Raspberry Pi or other Linux machine starts the dashboard on boot. systemd starts the process directly. It does not open a shell and it does not read `~/.bashrc`, even when `User=` is the account that owns that file. Variables that exist in an interactive shell can still be missing from the service.
+
+Put the same three values in the unit with `Environment=` lines. Quotes keep a password that contains a space intact:
+
+```ini
+Environment="TAPO_USERNAME=your-email@example.com"
+Environment="TAPO_PASSWORD=your-tapo-cloud-password"
+Environment="TAPO_HUB_IP=192.168.1.10"
+```
+
+`tapo-dashboard.service.example` is that unit with these three lines. Section 7 shows how to install it. If the lines are missing, the service logs `Set TAPO_HUB_IP to the LAN address of the H500 hub.` and does not try to log in.
+
+Use both places when you sometimes start it by hand and sometimes as a service: `~/.bashrc` for the terminal, and the three `Environment=` lines for the service.
 
 ### Windows
+
+Windows does not use the systemd unit. The dashboard sees the variables of the PowerShell window that starts it.
 
 For the current PowerShell window:
 
@@ -89,7 +118,7 @@ To keep them for your Windows user, store them once. This does not change the wi
 [System.Environment]::SetEnvironmentVariable("TAPO_HUB_IP", "192.168.1.10", "User")
 ```
 
-Close PowerShell and open a new window so the saved values load. Activate `venv` again in that window.
+Close PowerShell and open a new window so the saved values load. Activate `venv` again in that window. A window that was already open keeps the old `$env:` values until you set them there too.
 
 ## 3. ffmpeg (camera thumbnails)
 
@@ -191,7 +220,7 @@ Copy-Item devices.yaml.example extra_devices.yaml
 
 ## 6. Run it and check the pages
 
-Linux or Raspberry Pi. Use two terminals, each with the variables from section 2 loaded:
+Linux or Raspberry Pi. Use two terminals. Each one needs the three `export` lines from the manual-run steps in section 2 (`~/.bashrc` already covers a new interactive terminal):
 
 ```bash
 # Terminal 1, from the project directory
@@ -203,7 +232,7 @@ cd ~/tapo-local/bin
 ./go2rtc -config go2rtc.yaml
 ```
 
-Windows. Use two PowerShell windows. Activate `venv` in the dashboard window:
+Windows. Use two PowerShell windows. The dashboard window needs the three variables from section 2, either as `$env:` assignments or from the saved user environment. Activate `venv` in that window:
 
 ```powershell
 # Window 1, from the project directory
@@ -229,7 +258,16 @@ Check these pages:
 
 ## 7. Run the dashboard as a service on Linux (optional)
 
-Create this unit once if a Raspberry Pi or other Linux machine should start the dashboard on boot. go2rtc is still started on its own. Replace `pi` and the sample account values. The service does not read `~/.bashrc`.
+Create this unit once if a Raspberry Pi or other Linux machine should start the dashboard on boot. go2rtc is still started on its own. The service does not read `~/.bashrc`. All three variables have to be `Environment=` lines in the unit, or the dashboard fails with `Set TAPO_HUB_IP to the LAN address of the H500 hub.`
+
+Copy `tapo-dashboard.service.example` into place and edit it. Replace `pi`, the project path, and the three sample values. `TAPO_HUB_IP` is your hub's address, such as `192.168.1.10` in the example. Keep the quotes.
+
+```bash
+sudo cp tapo-dashboard.service.example /etc/systemd/system/tapo-dashboard.service
+sudo nano /etc/systemd/system/tapo-dashboard.service
+```
+
+The unit looks like this:
 
 ```ini
 [Unit]
@@ -240,9 +278,9 @@ After=network-online.target
 Type=simple
 User=pi
 WorkingDirectory=/home/pi/tapo-local
-Environment=TAPO_USERNAME=your-email@example.com
-Environment=TAPO_PASSWORD=your-tapo-cloud-password
-Environment=TAPO_HUB_IP=192.168.1.10
+Environment="TAPO_USERNAME=your-email@example.com"
+Environment="TAPO_PASSWORD=your-tapo-cloud-password"
+Environment="TAPO_HUB_IP=192.168.1.10"
 ExecStart=/home/pi/tapo-local/venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 
@@ -250,14 +288,35 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-Save it as `/etc/systemd/system/tapo-dashboard.service`, then:
+Load it and start it:
 
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now tapo-dashboard.service
 ```
 
-This unit stays on that machine. Do not commit a copy that contains the password.
+If the service is already installed and an interactive shell already has `TAPO_HUB_IP`, edit the unit anyway. Add the three `Environment=` lines, then reload and restart. Saving `~/.bashrc` does not change the running service.
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart tapo-dashboard.service
+```
+
+Confirm the service received the names. This prints the three names and not their values:
+
+```bash
+sudo systemctl show tapo-dashboard.service -p Environment --value | grep -oE 'TAPO_(USERNAME|PASSWORD|HUB_IP)'
+```
+
+The list should include `TAPO_HUB_IP`, `TAPO_PASSWORD`, and `TAPO_USERNAME`. Then check the log:
+
+```bash
+journalctl -u tapo-dashboard.service -n 30 --no-pager
+```
+
+`Set TAPO_HUB_IP` in that log means the unit still does not have the variable. `systemctl show` without the `cut` command also prints the password, so leave that output on the machine.
+
+This unit stays on that machine. Do not commit a copy that contains the password. `git pull` does not update `/etc/systemd/system/tapo-dashboard.service`.
 
 ## 8. Updating
 
@@ -269,7 +328,7 @@ git pull
 sudo systemctl restart tapo-dashboard.service
 ```
 
-Skip the `systemctl` line when you start uvicorn yourself, and start that process again after the pull. Restart go2rtc as well when the pull changes how previews are requested.
+Skip the `systemctl` line when you start uvicorn yourself, and start that process again after the pull. Restart go2rtc as well when the pull changes how previews are requested. A pull does not change the `Environment=` lines in `/etc/systemd/system/tapo-dashboard.service`. Edit that file, then `daemon-reload` and restart, when the service is missing one of the three variables.
 
 Windows, from the project directory: `git pull`, then stop and start the uvicorn window and `go2rtc.exe`.
 

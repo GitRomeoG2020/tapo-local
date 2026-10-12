@@ -10,6 +10,7 @@ bin/go2rtc.exe
 bin/go2rtc.yaml
 extra_devices.yaml
 devices.yaml
+tapo-dashboard.service
 
 # Python
 __pycache__/

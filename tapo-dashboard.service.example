@@ -1,0 +1,22 @@
+# Copy to /etc/systemd/system/tapo-dashboard.service and replace the placeholders.
+# systemd does not read ~/.bashrc. The three Environment= lines below are what
+# the service receives. A missing TAPO_HUB_IP makes the dashboard report
+# "Set TAPO_HUB_IP to the LAN address of the H500 hub." and it does not log in.
+# Leave the filled unit on the machine. Do not commit it.
+
+[Unit]
+Description=Tapo local dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/tapo-local
+Environment="TAPO_USERNAME=your-email@example.com"
+Environment="TAPO_PASSWORD=your-tapo-cloud-password"
+Environment="TAPO_HUB_IP=192.168.1.10"
+ExecStart=/home/pi/tapo-local/venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
