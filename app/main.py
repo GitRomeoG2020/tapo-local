@@ -5,9 +5,12 @@ Run from the project root:
     python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Routes:
-    GET  /                              paired cameras and doorbells
-    GET  /devices/{device_id}           recent recording days and latest clips
-    POST /devices/{device_id}/download  one clip as MPEG-TS
+    GET  /                                 paired cameras and doorbells
+    GET  /devices/{device_id}              recording days and one day's clips
+    POST /devices/{device_id}/download     one clip as MPEG-TS
+    POST /devices/{device_id}/download-day every clip from one day as a zip
+    GET  /devices/{device_id}/download-day/progress
+                                           clip counter for that zip
 
 Plugs, lights, and live view can add routes beside these. They should use
 ``app.hub.session`` so they share the hub login.
@@ -20,7 +23,14 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from app.hub import BadRequest, HubError, parse_timestamp, remove_download, session
+from app.hub import (
+    BadRequest,
+    HubError,
+    clip_archive_name,
+    parse_timestamp,
+    remove_download,
+    session,
+)
 from scripts.h500_poc import LOOKBACK_DAYS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,8 +71,13 @@ async def home(request: Request) -> HTMLResponse:
 
 
 @app.get("/devices/{device_id}", response_class=HTMLResponse)
-async def device_page(request: Request, device_id: str, limit: int = 20) -> HTMLResponse:
-    recordings = await session.recordings(device_id, limit)
+async def device_page(
+    request: Request,
+    device_id: str,
+    limit: int = 20,
+    day: str | None = None,
+) -> HTMLResponse:
+    recordings = await session.recordings(device_id, limit, day)
     return render(
         request,
         "device.html",
@@ -70,6 +85,7 @@ async def device_page(request: Request, device_id: str, limit: int = 20) -> HTML
             "title": recordings.device.name,
             "recordings": recordings,
             "lookback_days": LOOKBACK_DAYS,
+            "limit": min(max(limit, 1), 50),
         },
     )
 
@@ -92,5 +108,21 @@ async def download_clip(
         path,
         media_type="video/mp2t",
         filename=filename,
+        background=BackgroundTask(remove_download, path),
+    )
+
+
+@app.get("/devices/{device_id}/download-day/progress")
+async def download_day_progress(device_id: str, day: str) -> dict:
+    return session.day_download_progress(device_id, day)
+
+
+@app.post("/devices/{device_id}/download-day")
+async def download_day(device_id: str, day: str = Form(...)) -> FileResponse:
+    path = await session.download_day(device_id, day)
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=clip_archive_name(device_id, day),
         background=BackgroundTask(remove_download, path),
     )

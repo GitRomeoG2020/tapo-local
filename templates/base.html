@@ -70,6 +70,16 @@
     }
     button:hover { filter: brightness(1.08); }
     ul.days { padding-left: 1.2rem; }
+    ul.days a[aria-current="page"] { font-weight: 700; }
+    .day-actions { margin: 0.2rem 0 1rem; }
+    .day-actions button:disabled { opacity: 0.75; cursor: progress; }
+    .notice {
+      background: #e8f0fe;
+      border: 1px solid #c5d7f7;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+      margin: 0.2rem 0 1rem;
+    }
     .back { display: inline-block; margin-bottom: 0.8rem; }
   </style>
 </head>

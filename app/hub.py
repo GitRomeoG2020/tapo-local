@@ -9,8 +9,10 @@ does not store or print those values.
 
 import os
 import re
+import shutil
 import sys
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -53,7 +55,14 @@ class Device:
 
 @dataclass
 class RecordingDay:
+    """One day the hub reports as having recordings.
+
+    ``start`` and ``end`` are the timezone-aware bounds ``get_recordings`` expects.
+    """
+
     date: str
+    start: datetime
+    end: datetime
 
 
 @dataclass
@@ -81,6 +90,22 @@ class Clip:
 
 
 @dataclass
+class DayDownloadProgress:
+    """In-memory status for the zip that is currently being built.
+
+    The page polls this while the zip response is still open. It is not stored
+    on the hub and it does not change which clips go into the file.
+    """
+
+    device_id: str
+    day: str
+    completed: int
+    total: int
+    phase: str
+    message: str
+
+
+@dataclass
 class DeviceRecordings:
     device: Device
     source: str
@@ -88,6 +113,7 @@ class DeviceRecordings:
     clips: list[Clip]
     clip_total: int
     newest_day: str
+    selected_day: str
 
 
 def format_duration(seconds: int) -> str:
@@ -139,6 +165,74 @@ def _require_device_id(device_id: str) -> str:
     if not _DEVICE_ID.fullmatch(device_id or ""):
         raise NotFound("That device id is not valid.")
     return device_id
+
+
+def select_day(days: list[RecordingDay], requested: str | None) -> RecordingDay | None:
+    """Pick the requested day, or the newest day when ``requested`` is empty.
+
+    The hub list is in calendar order, so the last entry is the newest. A day
+    that is not in that list is rejected instead of querying an arbitrary range.
+    """
+    if not days:
+        return None
+    text = (requested or "").strip()
+    if not text:
+        return days[-1]
+    for day in days:
+        if day.date == text:
+            return day
+    raise BadRequest("That recording day was not found for this camera.")
+
+
+def clips_from_recordings(recordings, limit: int | None = None) -> list[Clip]:
+    """Turn hub recording rows into clip rows, keeping the last ``limit`` when set."""
+    chosen = list(recordings)
+    if limit is not None:
+        chosen = chosen[-limit:]
+    clips = []
+    for recording in chosen:
+        start = recording.start_time
+        end = recording.end_time
+        clips.append(
+            Clip(
+                start=start,
+                end=end,
+                duration_s=int((end - start).total_seconds()),
+                video_type=_recording_type(getattr(recording, "video_type", "")),
+            )
+        )
+    return clips
+
+
+def write_clip_zip(folder: Path, parts: list[Path]) -> Path:
+    """Pack MPEG-TS files into ``clips.zip`` inside ``folder``.
+
+    Stored, not deflated: these files are already compressed video.
+    """
+    archive = folder / "clips.zip"
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_STORED) as bundle:
+        for path in parts:
+            bundle.write(path, arcname=path.name)
+    return archive
+
+
+def day_progress_message(phase: str, completed: int, total: int, error: str = "") -> str:
+    """Short status line for the download-all button."""
+    if phase == "done":
+        return "Zip ready. Your download should start shortly."
+    if phase == "error":
+        return error or "The zip could not be prepared."
+    if phase == "zipping":
+        return "Packing the zip… this can take several minutes."
+    if total:
+        return f"Fetched {completed} of {total} clips… this can take several minutes."
+    return "Preparing zip… this can take several minutes."
+
+
+def clip_archive_name(device_id: str, day: str) -> str:
+    """Browser filename for a day's zip. The day is not used as a filesystem path."""
+    safe_day = re.sub(r"[^0-9A-Za-z_-]", "", day) or "day"
+    return f"clips-{device_id[:12]}-{safe_day}.zip"
 
 
 def _recording_type(value) -> str:
@@ -293,6 +387,45 @@ class HubSession:
     def __init__(self) -> None:
         self._hub = None
         self._lock = None
+        self._day_progress: DayDownloadProgress | None = None
+
+    def _set_day_progress(
+        self,
+        device_id: str,
+        day: str,
+        completed: int,
+        total: int,
+        phase: str,
+        error: str = "",
+    ) -> None:
+        self._day_progress = DayDownloadProgress(
+            device_id,
+            day,
+            completed,
+            total,
+            phase,
+            day_progress_message(phase, completed, total, error),
+        )
+
+    def day_download_progress(self, device_id: str, day: str) -> dict:
+        """Progress for the zip in progress, or idle when this day is not the one running."""
+        progress = self._day_progress
+        text = (day or "").strip()
+        if progress is None or progress.device_id != device_id or progress.day != text:
+            return {
+                "active": False,
+                "completed": 0,
+                "total": 0,
+                "phase": "idle",
+                "message": day_progress_message("preparing", 0, 0),
+            }
+        return {
+            "active": True,
+            "completed": progress.completed,
+            "total": progress.total,
+            "phase": progress.phase,
+            "message": progress.message,
+        }
 
     def _guard(self):
         # Created lazily so importing this module does not require a running loop.
@@ -390,40 +523,110 @@ class HubSession:
                 return camera, source
         raise NotFound("That camera or doorbell is not paired to this hub.")
 
-    async def recordings(self, device_id: str, limit: int) -> DeviceRecordings:
-        """Days in the lookback window, and the last ``limit`` clips on the newest day."""
+    async def recordings(
+        self, device_id: str, limit: int, day: str | None = None
+    ) -> DeviceRecordings:
+        """Days in the lookback window, and the last ``limit`` clips on one day.
+
+        With no day, that is the newest day. A day link passes that day's date
+        and the same window the hub reported for it.
+        """
         device, source = await self.get_device(device_id)
         limit = min(max(int(limit), 1), 50)
 
         async def operation(hub):
-            end_time = datetime.now(timezone.utc)
-            start_time = end_time - timedelta(days=poc.LOOKBACK_DAYS)
-            days = await hub.get_recording_dates(device.device_id, start_time, end_time)
-            day_rows = [RecordingDay(str(day.date)) for day in days]
+            day_rows = await self._recording_days(hub, device.device_id)
+            selected = select_day(day_rows, day)
             clips = []
             clip_total = 0
-            newest = ""
-            if days:
-                latest = days[-1]
-                newest = str(latest.date)
+            if selected is not None:
                 recordings = await hub.get_recordings(
-                    device.device_id, latest.start_time, latest.end_time
+                    device.device_id, selected.start, selected.end
                 )
                 clip_total = len(recordings)
-                for recording in recordings[-limit:]:
-                    start = recording.start_time
-                    end = recording.end_time
-                    clips.append(
-                        Clip(
-                            start=start,
-                            end=end,
-                            duration_s=int((end - start).total_seconds()),
-                            video_type=_recording_type(getattr(recording, "video_type", "")),
-                        )
-                    )
-            return DeviceRecordings(device, source, day_rows, clips, clip_total, newest)
+                clips = clips_from_recordings(recordings, limit)
+            newest = day_rows[-1].date if day_rows else ""
+            selected_day = selected.date if selected is not None else ""
+            return DeviceRecordings(
+                device, source, day_rows, clips, clip_total, newest, selected_day
+            )
 
         return await self.call(operation)
+
+    async def _recording_days(self, hub, device_id: str) -> list[RecordingDay]:
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(days=poc.LOOKBACK_DAYS)
+        days = await hub.get_recording_dates(device_id, start_time, end_time)
+        return [
+            RecordingDay(str(day.date), day.start_time, day.end_time) for day in days
+        ]
+
+    async def download_day(self, device_id: str, day: str) -> Path:
+        """Download every clip on one recording day and return a zip path.
+
+        The day must be one ``get_recording_dates`` returned. Clips are fetched
+        one at a time on the shared hub session, then packed into the zip.
+        """
+        text = (day or "").strip()
+        if not text:
+            raise BadRequest("Choose a recording day to download.")
+        # Visible to the progress poll before the first clip request returns.
+        self._set_day_progress(device_id, text, 0, 0, "preparing")
+        folder: Path | None = None
+        try:
+            device, _source = await self.get_device(device_id)
+            folder = Path(tempfile.mkdtemp(prefix="h500-day-"))
+
+            async def operation(hub):
+                selected = select_day(
+                    await self._recording_days(hub, device.device_id), text
+                )
+                if selected is None:
+                    raise BadRequest("That day has no clips to download.")
+                recordings = await hub.get_recordings(
+                    device.device_id, selected.start, selected.end
+                )
+                if not recordings:
+                    raise BadRequest("That day has no clips to download.")
+                total = len(recordings)
+                self._set_day_progress(device.device_id, text, 0, total, "fetching")
+                parts = []
+                for index, recording in enumerate(recordings, start=1):
+                    stamp = recording.start_time.astimezone(timezone.utc).strftime(
+                        "%Y%m%dT%H%M%SZ"
+                    )
+                    target = folder / f"{index:03d}-{stamp}.ts"
+                    result = await hub.download_recording(
+                        device.device_id,
+                        recording.start_time,
+                        recording.end_time,
+                        target,
+                    )
+                    if getattr(result, "byte_count", 0) <= 0 or not target.is_file():
+                        raise HubError(f"The hub did not send clip {target.name}.")
+                    parts.append(target)
+                    self._set_day_progress(
+                        device.device_id, text, index, total, "fetching"
+                    )
+                self._set_day_progress(device.device_id, text, total, total, "zipping")
+                archive = write_clip_zip(folder, parts)
+                for path in parts:
+                    path.unlink(missing_ok=True)
+                return archive
+
+            path = await self.call(operation)
+            current = self._day_progress
+            total = current.total if current is not None else 0
+            self._set_day_progress(device_id, text, total, total, "done")
+            return path
+        except Exception as err:
+            current = self._day_progress
+            completed = current.completed if current is not None else 0
+            total = current.total if current is not None else 0
+            self._set_day_progress(device_id, text, completed, total, "error", str(err))
+            if folder is not None:
+                shutil.rmtree(folder, ignore_errors=True)
+            raise
 
     async def download_clip(self, device_id: str, start: datetime, end: datetime) -> Path:
         """Save one hub recording as MPEG-TS and return the temp file path."""
@@ -451,10 +654,14 @@ class HubSession:
 
 
 def remove_download(path: Path) -> None:
-    """Delete a downloaded clip and its temp folder after the response is sent."""
+    """Delete a downloaded clip or zip and its temp folder after the response is sent."""
+    folder = path.parent
+    if folder.name.startswith(("h500-clip-", "h500-day-")):
+        shutil.rmtree(folder, ignore_errors=True)
+        return
     path.unlink(missing_ok=True)
     try:
-        path.parent.rmdir()
+        folder.rmdir()
     except OSError:
         pass
 

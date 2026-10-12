@@ -13,22 +13,90 @@
 {% if recordings.days %}
   <ul class="days">
     {% for day in recordings.days %}
-      <li>{{ day.date }}</li>
+      <li>
+        <a
+          href="/devices/{{ recordings.device.device_id }}?day={{ day.date | urlencode }}&limit={{ limit }}"
+          {% if day.date == recordings.selected_day %}aria-current="page"{% endif %}
+        >{{ day.date }}</a>
+      </li>
     {% endfor %}
   </ul>
 {% else %}
   <p>No recording days in this window.</p>
 {% endif %}
 
-<h2>Latest clips</h2>
+{% if recordings.selected_day %}
+  <h2>Clips on {{ recordings.selected_day }}</h2>
+{% else %}
+  <h2>Clips</h2>
+{% endif %}
 {% if recordings.clips %}
   <p class="muted">
     {% if recordings.clip_total > recordings.clips|length %}
-      Last {{ recordings.clips|length }} of {{ recordings.clip_total }} clips on {{ recordings.newest_day }}.
+      Last {{ recordings.clips|length }} of {{ recordings.clip_total }} clips on {{ recordings.selected_day }}.
     {% else %}
-      {{ recordings.clip_total }} clip{% if recordings.clip_total != 1 %}s{% endif %} on {{ recordings.newest_day }}.
+      {{ recordings.clip_total }} clip{% if recordings.clip_total != 1 %}s{% endif %} on {{ recordings.selected_day }}.
     {% endif %}
   </p>
+  {% if recordings.clip_total > 0 %}
+    <form id="download-day" class="day-actions" method="post" action="/devices/{{ recordings.device.device_id }}/download-day">
+      <input type="hidden" name="day" value="{{ recordings.selected_day }}">
+      <button type="submit">Download all clips for this day</button>
+    </form>
+    <p id="download-day-status" class="notice" role="status" aria-live="polite" hidden></p>
+    <script>
+      (function () {
+        var form = document.getElementById("download-day");
+        if (!form) return;
+        var status = document.getElementById("download-day-status");
+        var button = form.querySelector("button");
+        var dayInput = form.querySelector('input[name="day"]');
+        var timer = null;
+
+        function show(text) {
+          status.hidden = false;
+          status.textContent = text;
+        }
+
+        function stop() {
+          if (timer) {
+            clearInterval(timer);
+            timer = null;
+          }
+        }
+
+        function poll() {
+          var url = form.getAttribute("action") + "/progress?day=" + encodeURIComponent(dayInput.value);
+          fetch(url, { headers: { "Accept": "application/json" } })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              if (!data || !data.active || !data.message) return;
+              show(data.message);
+              if (data.phase === "fetching" && data.total) {
+                button.textContent = "Fetched " + data.completed + " of " + data.total + "…";
+              }
+              if (data.phase === "done" || data.phase === "error") stop();
+            })
+            .catch(function () {});
+        }
+
+        form.addEventListener("submit", function () {
+          show("Preparing zip… this can take several minutes.");
+          button.setAttribute("aria-busy", "true");
+          // Disable after this handler returns so the browser still submits the form.
+          setTimeout(function () {
+            button.disabled = true;
+            button.textContent = "Preparing zip…";
+          }, 0);
+          poll();
+          timer = setInterval(poll, 1000);
+        });
+      })();
+    </script>
+    {% if recordings.clip_total > recordings.clips|length %}
+      <p class="muted">The zip includes every clip on this day, including clips that are not in the list below.</p>
+    {% endif %}
+  {% endif %}
   <div class="scroll">
     <table>
       <thead>
@@ -58,6 +126,6 @@
     </table>
   </div>
 {% else %}
-  <p>No clips on the newest recording day.</p>
+  <p>No clips on this day.</p>
 {% endif %}
 {% endblock %}

@@ -50,7 +50,7 @@ python scripts/h500_poc.py
 
 ## H500 dashboard
 
-`app/main.py` is a local page for the same hub. It lists paired cameras and doorbells with name, model, and hub storage. Open a device to see recording days from the last 7 days and the latest clips on the newest day. Each clip has a Download button that saves that recording as MPEG-TS.
+`app/main.py` is a local page for the same hub. It lists paired cameras and doorbells with name, model, and hub storage. Open a device to see recording days from the last 7 days. The page opens on the newest day. Each day is a link to that day's clips. Each clip has a Download button that saves that recording as MPEG-TS. Download all clips for this day saves every clip from the selected day into one zip file. That can take a while, because the hub sends the clips one at a time.
 
 The camera list prefers `get_child_device_list_json()`. If that list has no cameras or doorbells, the page uses `get_general_device_list()`, then `get_child_device_list()`. Login and device filtering are the same helpers as `scripts/h500_poc.py`. Plugs, lights, and live view are not in this version. Add them as new routes that use the shared session in `app/hub.py`.
 
