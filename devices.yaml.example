@@ -1,0 +1,12 @@
+# Copy this file to extra_devices.yaml only when a plug or light is on
+# another subnet or VLAN. extra_devices.yaml is gitignored.
+# A missing file leaves the Devices page on the subnet scan.
+#
+# model is optional. Examples: L530, P110.
+
+extra_devices:
+  - ip: 192.168.1.50
+    name: Hall bulb
+  - ip: 192.168.2.40
+    name: Office plug
+    model: P110

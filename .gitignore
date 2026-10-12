@@ -4,6 +4,13 @@
 credentials*
 secrets*
 
+# Local hub config. The go2rtc yaml holds the camera account hash.
+bin/go2rtc
+bin/go2rtc.exe
+bin/go2rtc.yaml
+extra_devices.yaml
+devices.yaml
+
 # Python
 __pycache__/
 *.py[cod]

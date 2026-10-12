@@ -1,0 +1,25 @@
+# Copy this file to bin/go2rtc.yaml and replace the placeholders.
+# bin/go2rtc.yaml is gitignored. Leave the real file on this machine.
+#
+# The user in the URL is admin. The password is not TAPO_PASSWORD.
+# It is the uppercase SHA256 hex digest of that password:
+#
+#   echo -n "your-tapo-cloud-password" | sha256sum | awk '{print toupper($1)}'
+#
+# On Windows:
+#
+#   $hash = [System.BitConverter]::ToString(
+#     [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+#       [System.Text.Encoding]::UTF8.GetBytes("your-tapo-cloud-password")
+#     )
+#   ).Replace("-", "")
+#
+# The host is the same address as TAPO_HUB_IP. Battery cameras on an H500
+# have no LAN address of their own.
+#
+# deviceId is the hub child id: 8 to 64 hexadecimal characters, with no
+# quotes. The Cameras page and scripts/h500_poc.py print that id.
+# One stream per camera. The name on the left is what Live View shows.
+
+streams:
+  front_door: tapo://admin:YOUR_UPPERCASE_SHA256@192.168.1.10/?deviceId=DEVICE_ID_HERE

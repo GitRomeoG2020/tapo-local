@@ -292,7 +292,10 @@ def sync_go2rtc_file(path: Path, cameras) -> list[str]:
         return []
 
     password_hash = _password_sha256()
-    hub_ip = poc.H500_IP
+    try:
+        hub_ip = poc.hub_ip()
+    except poc.HubAddressError as err:
+        raise Go2rtcConfigError(str(err)) from err
     new_lines = [
         (
             f"  {name}: tapo://admin:{password_hash}@{hub_ip}/?deviceId={device_id}"

@@ -1,18 +1,22 @@
 # Tapo Local Dashboard — Install & Run Guide
 
-This guide gets the H500 recording browser, live view, and the Devices page running on a fresh Ubuntu or Raspberry Pi OS machine. The Windows PC uses the same repository. The dashboard steps that differ are called out below.
+This guide gets the H500 recording browser, live view, and the Devices page running from a fresh clone. Follow the Linux / Raspberry Pi blocks or the Windows blocks. Both use the same repository.
+
+This is an unofficial project. It is not affiliated with TP-Link. A Tapo firmware update can change the local API and may require code changes.
 
 ## Prerequisites
 
-- Ubuntu 22.04+ or Raspberry Pi OS (64-bit), or Windows for the desktop copy
+- Ubuntu 22.04+ or Raspberry Pi OS (64-bit), or Windows 10/11
 - Python 3.10+
-- ffmpeg. go2rtc uses it to encode the camera preview JPEG.
 - git
+- ffmpeg. go2rtc uses it to encode each camera preview JPEG. `pip` does not install it.
 - Network access to the Tapo H500 hub
 - Python packages from `requirements.txt`: FastAPI, uvicorn, Jinja2, python-multipart, and `tapo` 0.10 or newer
-- go2rtc, installed separately. `pip` does not install it
+- go2rtc, installed separately. `pip` does not install it.
 
-## 1. Clone and set up the Python environment
+## 1. Clone and set up Python
+
+Linux or Raspberry Pi:
 
 ```bash
 cd ~
@@ -23,56 +27,122 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-On Windows, from the project directory:
+Windows, from the folder where you want the project:
 
 ```powershell
+git clone https://github.com/GitRomeoG2020/tapo-local.git
+cd tapo-local
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
-## 2. Credentials
+Open a new terminal later and activate the same `venv` before you run the dashboard.
 
-Use the cloud TP-Link account that owns the hub. Set these in the shell. Add them to `~/.bashrc` on the Pi so they survive a reboot. Do not put the password in the repository.
+## 2. Environment variables
+
+The dashboard and `scripts/h500_poc.py` read three variables. Do not put the password, or these values, in the repository.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `TAPO_USERNAME` | yes | Cloud TP-Link account that owns the hub, usually an email address |
+| `TAPO_PASSWORD` | yes | Password for that account |
+| `TAPO_HUB_IP` | yes | LAN IPv4 address of the H500, such as `192.168.1.10` |
+
+`TAPO_HUB_IP` is the hub's address on your network. Use your hub's address, not the sample `192.168.1.10`. If it is missing or is not an IPv4 address, the app stops with a clear error and does not try to log in.
+
+A rejected password is not retried. A locked hub refuses further logins for a while.
+
+### Linux and Raspberry Pi
+
+For the current terminal:
 
 ```bash
 export TAPO_USERNAME="your-email@example.com"
 export TAPO_PASSWORD="your-tapo-cloud-password"
+export TAPO_HUB_IP="192.168.1.10"
 ```
 
-On Windows:
+To keep them after a reboot, add those three `export` lines to the end of `~/.bashrc`, then load them:
+
+```bash
+source ~/.bashrc
+```
+
+A systemd service does not read `~/.bashrc`. The unit in section 7 has its own `Environment=` lines. Set the variables in both places when the Pi starts the dashboard on boot.
+
+### Windows
+
+For the current PowerShell window:
 
 ```powershell
 $env:TAPO_USERNAME = "your-email@example.com"
 $env:TAPO_PASSWORD = "your-tapo-cloud-password"
+$env:TAPO_HUB_IP = "192.168.1.10"
 ```
 
-A rejected password is not retried. A locked hub refuses further logins for a while.
+To keep them for your Windows user, store them once. This does not change the window you already have open:
 
-## 3. go2rtc (live view)
+```powershell
+[System.Environment]::SetEnvironmentVariable("TAPO_USERNAME", "your-email@example.com", "User")
+[System.Environment]::SetEnvironmentVariable("TAPO_PASSWORD", "your-tapo-cloud-password", "User")
+[System.Environment]::SetEnvironmentVariable("TAPO_HUB_IP", "192.168.1.10", "User")
+```
+
+Close PowerShell and open a new window so the saved values load. Activate `venv` again in that window.
+
+## 3. ffmpeg (camera thumbnails)
+
+Previews on the Cameras and Live View pages ask go2rtc for a small JPEG. go2rtc runs `ffmpeg` to encode that frame. Live view playback does not use ffmpeg. When `ffmpeg` is missing, the camera list still loads and every preview stays on the placeholder.
+
+Linux or Raspberry Pi:
+
+```bash
+sudo apt install -y ffmpeg
+```
+
+Windows. Install a build that puts `ffmpeg.exe` on your user PATH, then open a new PowerShell window:
+
+```powershell
+winget install --id Gyan.FFmpeg -e
+```
+
+Check either machine with `ffmpeg -version`.
+
+## 4. go2rtc (live view)
 
 Live view needs two files that are not in git:
 
-- `bin/go2rtc` on Linux, or `bin/go2rtc.exe` on Windows. Download the binary from the go2rtc releases.
+- `bin/go2rtc` on Linux, or `bin/go2rtc.exe` on Windows. Download the binary from the [go2rtc releases](https://github.com/AlexxIT/go2rtc/releases).
 - `bin/go2rtc.yaml`. The dashboard reads stream names from this file. It does not start go2rtc.
 
 Leave both files in `bin/` on each machine. Do not commit them. The yaml contains the camera account secret inside the `tapo://` URLs.
 
-Example `bin/go2rtc.yaml`. Replace the hash and each device id. One stream per camera. Battery cameras on the H500 use the hub address plus `deviceId`:
+Copy `bin/go2rtc.yaml.example` and edit the placeholders. One stream per camera. Battery cameras on the H500 use the hub address plus `deviceId`.
 
-```yaml
-streams:
-  front_door: tapo://admin:YOUR_UPPERCASE_SHA256@192.168.11.223/?deviceId=DEVICE_ID_HERE
-  front_doorbell: tapo://admin:YOUR_UPPERCASE_SHA256@192.168.11.223/?deviceId=DEVICE_ID_HERE
+Linux or Raspberry Pi:
+
+```bash
+cp bin/go2rtc.yaml.example bin/go2rtc.yaml
 ```
 
-Generate the SHA256 from the cloud password:
+Windows:
+
+```powershell
+Copy-Item bin\go2rtc.yaml.example bin\go2rtc.yaml
+```
+
+The password in each URL is the uppercase SHA256 of `TAPO_PASSWORD`, not the password itself. `deviceId` is the hub child id: 8 to 64 hexadecimal characters. The host is the same address as `TAPO_HUB_IP`. Comments in `bin/go2rtc.yaml.example` describe both fields.
+
+Generate the SHA256 from the cloud password.
+
+Linux or Raspberry Pi:
 
 ```bash
 echo -n "your-tapo-cloud-password" | sha256sum | awk '{print toupper($1)}'
 ```
 
-On Windows:
+Windows:
 
 ```powershell
 $hash = [System.BitConverter]::ToString(
@@ -85,39 +155,46 @@ $hash
 
 The Live View page lists each name under `streams` and links to `http://<host>:1984/stream.html?src=<name>`. It also links to the full go2rtc UI on port 1984. Stream URL values stay in the yaml.
 
-Previews on the Cameras and Live View pages load after the list. Each one asks go2rtc for a small JPEG (`width=320`), waits up to 15 seconds, and tries once more. A Raspberry Pi often needs that extra time while a battery camera wakes and the frame is encoded. One preview is encoded at a time, so several images appear in turn. A preview that still does not arrive shows a placeholder, and the rest of the page stays up.
+Previews load after the list. Each one asks go2rtc for a small JPEG (`width=320`), waits up to 15 seconds, and tries once more. A Raspberry Pi often needs that extra time while a battery camera wakes and the frame is encoded. One preview is encoded at a time, so several images appear in turn. A preview that still does not arrive shows a placeholder, and the rest of the page stays up.
 
-go2rtc runs `ffmpeg` for that JPEG. On Ubuntu or Raspberry Pi OS:
+Live View has a Sync cameras to go2rtc button. It uses the same hub camera list as the Cameras page and appends any camera whose device id is not already in `bin/go2rtc.yaml`. Existing stream lines are left as they are. Each new line looks like `tapo://admin:UPPERCASE_SHA256@<hub-ip>/?deviceId=<id>`. The hash is the uppercase SHA256 of `TAPO_PASSWORD`. After the page names what it added, restart go2rtc so the new streams load.
+
+Linux or Raspberry Pi, when go2rtc is a service:
 
 ```bash
-sudo apt install ffmpeg
+sudo systemctl restart go2rtc
 ```
 
-On Windows, install ffmpeg and leave `ffmpeg.exe` on the PATH. When `ffmpeg` is missing, every preview stays on the placeholder.
+Windows: stop `go2rtc.exe` and start it again.
 
-Live View has a Sync cameras to go2rtc button. It uses the same hub camera list as the Cameras page and appends any camera whose device id is not already in `bin/go2rtc.yaml`. Existing stream lines are left as they are. Each new line looks like `tapo://admin:UPPERCASE_SHA256@<hub-ip>/?deviceId=<id>`. The hash is the uppercase SHA256 of `TAPO_PASSWORD`. After the page names what it added, restart go2rtc so the new streams load: `sudo systemctl restart go2rtc`. On Windows, stop `go2rtc.exe` and start it again.
+## 5. Extra devices (optional)
 
-## 4. Extra devices (optional)
+Plugs and lights on another subnet or VLAN go in `extra_devices.yaml` in the project root. The file is optional and is not committed. When it is missing, or it only has comments, the Devices page stays on the subnet scan.
 
-Plugs and lights on another subnet or VLAN go in `extra_devices.yaml` in the project root. The file is optional. When it is missing, or it only has comments, the Devices page stays on the subnet scan.
+Copy `devices.yaml.example` and edit the addresses.
 
-```yaml
-extra_devices:
-  - ip: 192.168.0.24
-    name: Music Room Bulb
-  - ip: 192.168.0.55
-    name: Smart Plug
-    model: P110
+Linux or Raspberry Pi:
+
+```bash
+cp devices.yaml.example extra_devices.yaml
+```
+
+Windows:
+
+```powershell
+Copy-Item devices.yaml.example extra_devices.yaml
 ```
 
 `model` is optional (`L530`, `P110`, and similar). The page logs in with `TAPO_USERNAME` and `TAPO_PASSWORD`, and shows the name, model, and on/off control. Brightness is shown when the device reports it. An address that does not respond is shown as offline.
 
-`devices.txt` is separate. One IPv4 address per line. A broadcast address such as `192.168.11.255` scans that subnet. When that file is missing or only has comments, the page scans the H500 subnet. When any address is listed, only those addresses are checked. Entries in `extra_devices.yaml` are added on top of that scan.
+`devices.txt` is separate. One IPv4 address per line. A broadcast address such as `192.168.1.255` scans that subnet. When that file is missing or only has comments, the page scans the subnet of `TAPO_HUB_IP`. When any address is listed, only those addresses are checked. Entries in `extra_devices.yaml` are added on top of that scan.
 
-## 5. Run manually (testing)
+## 6. Run it and check the pages
+
+Linux or Raspberry Pi. Use two terminals, each with the variables from section 2 loaded:
 
 ```bash
-# Terminal 1
+# Terminal 1, from the project directory
 source venv/bin/activate
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
@@ -126,11 +203,19 @@ cd ~/tapo-local/bin
 ./go2rtc -config go2rtc.yaml
 ```
 
-On Windows, bind the dashboard to this computer and start `go2rtc.exe` from `bin`:
+Windows. Use two PowerShell windows. Activate `venv` in the dashboard window:
 
 ```powershell
+# Window 1, from the project directory
+.\venv\Scripts\Activate.ps1
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# Window 2
+cd bin
+.\go2rtc.exe -config go2rtc.yaml
 ```
+
+On Linux the dashboard listens on all interfaces so other machines on the LAN can open it. On Windows the sample command listens on this PC only. Use `--host 0.0.0.0` on Windows when another device should open the dashboard.
 
 Dashboard: `http://server_name_or_IP:8000`
 
@@ -142,9 +227,9 @@ Check these pages:
 - `/live` lists the stream names from `bin/go2rtc.yaml`
 - `/controls` lists plugs and lights from the subnet scan and from `extra_devices.yaml`
 
-## 6. Run the dashboard as a service (optional)
+## 7. Run the dashboard as a service on Linux (optional)
 
-The update step restarts `tapo-dashboard.service`. Create that unit once if the Pi should start the dashboard on boot. go2rtc is still started on its own. Replace `pi` with the account that owns the clone.
+Create this unit once if a Raspberry Pi or other Linux machine should start the dashboard on boot. go2rtc is still started on its own. Replace `pi` and the sample account values. The service does not read `~/.bashrc`.
 
 ```ini
 [Unit]
@@ -157,6 +242,7 @@ User=pi
 WorkingDirectory=/home/pi/tapo-local
 Environment=TAPO_USERNAME=your-email@example.com
 Environment=TAPO_PASSWORD=your-tapo-cloud-password
+Environment=TAPO_HUB_IP=192.168.1.10
 ExecStart=/home/pi/tapo-local/venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=on-failure
 
@@ -171,15 +257,21 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now tapo-dashboard.service
 ```
 
-This unit stays on the Pi. Do not commit a copy that contains the password.
+This unit stays on that machine. Do not commit a copy that contains the password.
 
-## 7. Updating
+## 8. Updating
+
+Linux or Raspberry Pi:
 
 ```bash
 cd ~/tapo-local
 git pull
 sudo systemctl restart tapo-dashboard.service
 ```
+
+Skip the `systemctl` line when you start uvicorn yourself, and start that process again after the pull. Restart go2rtc as well when the pull changes how previews are requested.
+
+Windows, from the project directory: `git pull`, then stop and start the uvicorn window and `go2rtc.exe`.
 
 When a change adds a program, a package, or a config file the app needs, update this guide in the same commit. Right now, `pip install -r requirements.txt` does not provide:
 
@@ -189,6 +281,8 @@ When a change adds a program, a package, or a config file the app needs, update 
 
 ## Access
 
-Main dashboard: `http://<pi-ip-or-hostname>:8000`
+Dashboard on the Pi or Linux host: `http://<hostname-or-IP>:8000`
 
-Live view links inside the dashboard point at go2rtc on port 1984.
+Dashboard on this Windows PC, with the sample command: `http://127.0.0.1:8000`
+
+Live view links inside the dashboard point at go2rtc on port 1984 of the same host.

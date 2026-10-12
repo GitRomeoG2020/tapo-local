@@ -17,7 +17,7 @@
 
 Achieved with `scripts/h500_poc.py` + tapo library:
 
-- Connected to H500 at 192.168.11.223
+- Connected to the H500 at the address in `TAPO_HUB_IP`
 - Listed paired devices via `get_child_device_list_json()` (5 cameras/doorbell)
 - Retrieved recording days and recent clips for each
 - Confirmed hub storage is enabled

@@ -2,7 +2,7 @@
 
 Addresses come from ``devices.txt`` in the project root. One IPv4 address per
 line. An address ending in ``.255`` scans that subnet. When the file is
-missing or has no addresses, the page scans the H500 subnet instead. Adding
+missing or has no addresses, the page scans the subnet of ``TAPO_HUB_IP``. Adding
 an address does not require a code change.
 
 ``extra_devices.yaml`` is optional. Each entry is an additional device,
@@ -145,7 +145,7 @@ def is_broadcast(ip: str) -> bool:
 
 
 def subnet_broadcast(ip: str) -> str:
-    """``192.168.11.223`` becomes ``192.168.11.255``."""
+    """``192.168.1.10`` becomes ``192.168.1.255``."""
     address = normalize_ipv4(ip)
     if address is None:
         return "255.255.255.255"
@@ -328,7 +328,12 @@ def is_camera_device(device) -> bool:
     if model and _CAMERA_MODEL.match(model):
         return True
     ip = normalize_ipv4(_text(_read(device, "ip")))
-    return ip == poc.H500_IP
+    if not ip:
+        return False
+    try:
+        return ip == poc.hub_ip()
+    except poc.HubAddressError:
+        return False
 
 
 def validate_command(
@@ -549,7 +554,10 @@ class ControlSession:
         return ""
 
     async def _scan(self, token: tuple) -> ControlList:
-        fallback = subnet_broadcast(poc.H500_IP)
+        try:
+            fallback = subnet_broadcast(poc.hub_ip())
+        except poc.HubAddressError as err:
+            raise ControlError(str(err)) from err
         targets, source = targets_for(DEVICES_FILE, fallback)
         extra_error = self._load_extras()
         extras = list(self._extras.values())

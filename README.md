@@ -36,7 +36,7 @@ See [TAPO_RESOURCES.md](TAPO_RESOURCES.md) for libraries, protocols, and related
 
 ## H500 recording check
 
-`scripts/h500_poc.py` logs in to the H500 at `192.168.11.223`, lists paired cameras, and prints recording days from the last 7 days plus clips on the newest day. It does not download video.
+`scripts/h500_poc.py` logs in to the H500 at the address in `TAPO_HUB_IP`, lists paired cameras, and prints recording days from the last 7 days plus clips on the newest day. It does not download video.
 
 Use the cloud TP-Link account that owns the hub. Set the variables in the shell. Do not put them in the script or in this repository.
 
@@ -44,6 +44,7 @@ Use the cloud TP-Link account that owns the hub. Set the variables in the shell.
 python -m pip install "tapo>=0.10"
 $env:TAPO_USERNAME = "you@example.com"
 $env:TAPO_PASSWORD = "your-tapo-password"
+$env:TAPO_HUB_IP = "192.168.1.10"
 python scripts/h500_poc.py
 ```
 
@@ -57,26 +58,19 @@ The camera list prefers `get_child_device_list_json()`. If that list has no came
 
 Every page has the same top navigation. Cameras & Recordings is this home page. Live View lists the stream names in `bin/go2rtc.yaml` and links each one to the go2rtc player at `http://<host>:1984/stream.html?src=<name>`. It also links to the full go2rtc UI on port 1984. go2rtc is assumed to be running on the same computer.
 
-Devices lists plugs, lights, and other non-camera Tapo devices. With no addresses in `devices.txt`, the page scans the H500 subnet. Add an IPv4 address to that file to check a device directly. A broadcast address such as `192.168.11.255` scans that subnet. Each row shows the name, model, and online status. Plugs and lights can be switched on or off. A light that supports brightness has a brightness control. New addresses do not require a code change. The same `TAPO_USERNAME` and `TAPO_PASSWORD` variables are used. Camera recordings and live view are unchanged.
+Devices lists plugs, lights, and other non-camera Tapo devices. With no addresses in `devices.txt`, the page scans the subnet of `TAPO_HUB_IP`. Add an IPv4 address to that file to check a device directly. A broadcast address such as `192.168.1.255` scans that subnet. Each row shows the name, model, and online status. Plugs and lights can be switched on or off. A light that supports brightness has a brightness control. New addresses do not require a code change. The same `TAPO_USERNAME` and `TAPO_PASSWORD` variables are used. Camera recordings and live view are unchanged.
 
 To add a plug or light on another subnet or VLAN, list it in `extra_devices.yaml` in the project root. The file is optional. When it is missing, or it only has comments, the Devices page stays on the scan above. Listed devices are shown together with anything that scan finds. The app logs in to each listed address with `TAPO_USERNAME` and `TAPO_PASSWORD` and shows its name, model, and on/off control. Brightness is shown when the device reports it. An address that does not respond is shown as offline.
 
-```yaml
-extra_devices:
-  - ip: 192.168.0.24
-    name: Music Room Bulb
-  - ip: 192.168.0.55
-    name: Smart Plug
-```
+Copy `devices.yaml.example` to `extra_devices.yaml` and edit the addresses. `model` is optional (`L530`, `P110`, and similar). `extra_devices.yaml` stays on this machine and is not committed.
 
-`model` is optional (`L530`, `P110`, and similar). Put the devices for this house in `extra_devices.yaml`. The example addresses above are only a pattern.
-
-The account is read from `TAPO_USERNAME` and `TAPO_PASSWORD`. Do not put those values in the code or in this repository.
+The account is read from `TAPO_USERNAME` and `TAPO_PASSWORD`. The hub address is `TAPO_HUB_IP`. Do not put those values in the code or in this repository.
 
 ```powershell
 python -m pip install -r requirements.txt
 $env:TAPO_USERNAME = "you@example.com"
 $env:TAPO_PASSWORD = "your-tapo-password"
+$env:TAPO_HUB_IP = "192.168.1.10"
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 

@@ -591,15 +591,20 @@ class HubSession:
                 'The tapo package is not installed. Run: python -m pip install "tapo>=0.10"'
             ) from err
 
+        try:
+            address = poc.hub_ip()
+        except poc.HubAddressError as err:
+            raise HubError(str(err)) from err
+
         # connect() prints the library error and raises SystemExit. Catch that
         # so a failed login stays on the page instead of stopping the server.
         try:
-            self._hub = await poc.connect(ApiClient(username, password), poc.H500_IP)
+            self._hub = await poc.connect(ApiClient(username, password), address)
         except SystemExit as err:
             self._hub = None
             cause = err.__cause__ or err.__context__
             detail = f" {cause}" if cause else ""
-            raise HubError(f"Could not log in to the H500 at {poc.H500_IP}.{detail}") from err
+            raise HubError(f"Could not log in to the H500 at {address}.{detail}") from err
         return self._hub
 
     async def _reauthenticate(self, hub):

@@ -13,9 +13,6 @@ import re
 import sys
 from datetime import datetime, timedelta, timezone
 
-# LAN address of the hub documented in DEVICES.md. This is not a credential.
-H500_IP = "192.168.11.223"
-
 # How far back to ask the hub which days have recordings.
 LOOKBACK_DAYS = 7
 
@@ -33,6 +30,27 @@ JSON_PAGE_LIMIT = 8
 # Tapo camera and doorbell model prefixes. Child-list entries use these when
 # the typed parser does not already label them as cameras.
 _CAMERA_MODEL = re.compile(r"^(C\d|TC\d|D\d)", re.IGNORECASE)
+_IPV4 = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
+
+
+class HubAddressError(Exception):
+    """TAPO_HUB_IP is missing or is not an IPv4 address."""
+
+
+def hub_ip() -> str:
+    """Return the H500 address from TAPO_HUB_IP.
+
+    The value is not a password. A missing or invalid address raises
+    ``HubAddressError`` with a message the page or the script can show.
+    """
+    value = os.getenv("TAPO_HUB_IP", "").strip()
+    if not value:
+        raise HubAddressError("Set TAPO_HUB_IP to the LAN address of the H500 hub.")
+    if not _IPV4.fullmatch(value) or any(int(part) > 255 for part in value.split(".")):
+        raise HubAddressError(
+            "TAPO_HUB_IP must be an IPv4 address, for example 192.168.1.10."
+        )
+    return value
 
 
 def credentials_from_env() -> tuple[str, str]:
@@ -433,15 +451,21 @@ async def main() -> None:
         )
         raise SystemExit(1)
 
-    print(f"Connecting to H500 at {H500_IP}...")
+    try:
+        address = hub_ip()
+    except HubAddressError as err:
+        print(err, file=sys.stderr)
+        raise SystemExit(1) from err
+
+    print(f"Connecting to H500 at {address}...")
     client = ApiClient(username, password)
     try:
-        hub = await connect(client, H500_IP)
+        hub = await connect(client, address)
         info = (await hub.get_device_info()).to_dict()
     except SystemExit:
         raise
     except Exception as err:
-        print(f"Failed to connect to the H500 at {H500_IP}: {err}", file=sys.stderr)
+        print(f"Failed to connect to the H500 at {address}: {err}", file=sys.stderr)
         raise SystemExit(1) from err
 
     # Device info has model and nickname. It does not include the account password.
