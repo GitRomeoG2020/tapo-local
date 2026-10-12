@@ -32,8 +32,10 @@ do not use the hub recording session.
 
 import asyncio
 import hashlib
+import logging
 import os
 import re
+import sys
 import threading
 import time
 import urllib.error
@@ -95,6 +97,15 @@ _HOSTNAME = re.compile(
 )
 
 app = FastAPI(title="H500 dashboard")
+
+# stderr, not the uvicorn logger tree, so INFO lines show up under systemd too.
+_preview_log = logging.getLogger("tapo.preview")
+_preview_log.setLevel(logging.INFO)
+if not _preview_log.handlers:
+    _preview_handler = logging.StreamHandler(sys.stderr)
+    _preview_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _preview_log.addHandler(_preview_handler)
+_preview_log.propagate = False
 
 
 def _indent_width(line: str) -> int:
@@ -374,20 +385,39 @@ def _frame_url(stream_name: str) -> str:
     )
 
 
-def _read_frame(stream_name: str) -> bytes | None:
-    """One attempt. None on timeout, a bad response, or a missing JPEG."""
+def _exception_detail(err: BaseException) -> str:
+    """Exception type, message, cause, and a short HTTP body. No stream URL."""
+    text = f"{type(err).__name__}: {err}"
+    cause = err.__cause__ or err.__context__
+    if isinstance(cause, BaseException):
+        text = f"{text}; cause {type(cause).__name__}: {cause}"
+    if isinstance(err, urllib.error.HTTPError):
+        try:
+            raw = err.read(800)
+        except Exception:
+            raw = b""
+        snippet = raw.decode("utf-8", errors="replace").replace("\n", " ").strip()
+        if "tapo://" in snippet.lower():
+            snippet = "tapo://(redacted)"
+        if snippet:
+            text = f"{text}; body: {snippet[:500]}"
+    return text[:1000]
+
+
+def _read_frame(stream_name: str) -> tuple[bytes | None, str | None]:
+    """One attempt. ``(jpeg, None)`` or ``(None, reason)``."""
     request = urllib.request.Request(_frame_url(stream_name), headers={"Accept": "image/jpeg"})
     try:
         with _FRAME_OPENER.open(request, timeout=FRAME_TIMEOUT_S) as response:
             content_type = (response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
             if content_type and content_type not in {"image/jpeg", "image/jpg"}:
-                return None
+                return None, f"content type {content_type}"
             data = response.read(FRAME_MAX_BYTES + 1)
-    except Exception:
-        return None
+    except Exception as err:
+        return None, _exception_detail(err)
     if len(data) < 3 or len(data) > FRAME_MAX_BYTES or not data.startswith(b"\xff\xd8"):
-        return None
-    return data
+        return None, f"not a jpeg ({len(data)} bytes)"
+    return data, None
 
 
 def fetch_go2rtc_jpeg(stream_name: str) -> bytes | None:
@@ -395,23 +425,37 @@ def fetch_go2rtc_jpeg(stream_name: str) -> bytes | None:
 
     ``CameraHubHandler`` has no snapshot for a child camera. go2rtc already
     holds the stream URL, so this asks it for ``/api/frame.jpeg``. The page
-    that shows the camera list does not call this.
+    that shows the camera list does not call this. A failure is logged and
+    the caller still receives None so the card can show the placeholder.
     """
     if not _STREAM_NAME.fullmatch(stream_name or ""):
+        _preview_log.warning("snapshot rejected: stream name %r is not usable", stream_name)
         return None
+    last = "no frame"
     with _FRAME_LOCK:
-        for attempt in range(FRAME_ATTEMPTS):
-            frame = _read_frame(stream_name)
+        for attempt in range(1, FRAME_ATTEMPTS + 1):
+            frame, detail = _read_frame(stream_name)
             if frame is not None:
+                _preview_log.info("snapshot %s: %s bytes", stream_name, len(frame))
                 return frame
-            if attempt + 1 < FRAME_ATTEMPTS:
+            last = detail or "no frame"
+            _preview_log.warning(
+                "snapshot %s attempt %s/%s failed: %s",
+                stream_name,
+                attempt,
+                FRAME_ATTEMPTS,
+                last,
+            )
+            if attempt < FRAME_ATTEMPTS:
                 time.sleep(FRAME_RETRY_PAUSE_S)
+    _preview_log.error("snapshot %s failed after %s attempts: %s", stream_name, FRAME_ATTEMPTS, last)
     return None
 
 
 def _thumbnail_bytes(device_id: str) -> bytes | None:
     name = stream_name_for_device(GO2RTC_CONFIG, device_id)
     if not name:
+        _preview_log.warning("snapshot skipped: no go2rtc stream for device %s", device_id)
         return None
     return fetch_go2rtc_jpeg(name)
 
@@ -548,10 +592,12 @@ async def live_thumbnail(stream_name: str) -> Response:
     not call the hub and does not read the stream URL into the response.
     """
     if stream_name not in set(stream_names(GO2RTC_CONFIG)):
+        _preview_log.warning("snapshot skipped: stream %s is not configured", stream_name)
         return _placeholder_response()
     try:
         frame = await asyncio.to_thread(fetch_go2rtc_jpeg, stream_name)
-    except Exception:
+    except Exception as err:
+        _preview_log.error("snapshot %s failed: %s", stream_name, _exception_detail(err))
         frame = None
     return _frame_response(frame)
 
@@ -575,7 +621,8 @@ async def camera_thumbnail(device_id: str) -> Response:
     """
     try:
         frame = await asyncio.to_thread(_thumbnail_bytes, device_id)
-    except Exception:
+    except Exception as err:
+        _preview_log.error("snapshot %s failed: %s", device_id, _exception_detail(err))
         frame = None
     return _frame_response(frame)
 
