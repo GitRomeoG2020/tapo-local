@@ -4,7 +4,9 @@ Cameras and doorbells are loaded here. Plugs, lights, and live view can call
 ``HubSession.call`` for the same login instead of opening a second connection.
 
 The account comes from ``TAPO_USERNAME`` and ``TAPO_PASSWORD``. This module
-does not store or print those values.
+does not store or print those values. An expired hub session is logged in
+again once, and the same request is tried again. A rejected password is not
+retried.
 """
 
 import os
@@ -377,8 +379,27 @@ async def fetch_json_rows(hub) -> list[dict]:
 
 
 def _session_expired(err: BaseException) -> bool:
+    """True when the cached hub login is stale and one new login can be tried.
+
+    tapo reports that as ``Unauthorized`` with kind ``SESSION_TIMEOUT`` on a
+    camera hub, or ``SESSION_EXPIRED`` (code ``-40401``) on an AES handshake.
+    A wrong or locked password is ``Unauthorized`` too, and must not be retried.
+    """
+    if poc.is_auth_failure(err):
+        return False
     text = str(err).lower()
-    return "session_timeout" in text or "session expired" in text
+    markers = (
+        "session_timeout",
+        "session_expired",
+        "session expired",
+        "session has expired",
+        "-40401",
+        "re-authentication is required",
+    )
+    if any(marker in text for marker in markers):
+        return True
+    # Older tapo builds reported the same expiry as HTTP 401.
+    return "401" in text and ("unauthorized" in text or "http" in text)
 
 
 class HubSession:
@@ -464,22 +485,38 @@ class HubSession:
             raise HubError(f"Could not log in to the H500 at {poc.H500_IP}.{detail}") from err
         return self._hub
 
+    async def _reauthenticate(self, hub):
+        """Open a fresh login after the cached session expires. One attempt."""
+        refresher = getattr(hub, "refresh_session", None)
+        if callable(refresher):
+            try:
+                await refresher()
+                return hub
+            except Exception as err:
+                if poc.is_auth_failure(err):
+                    self._hub = None
+                    raise HubError(str(err)) from err
+        self._hub = None
+        return await self._open()
+
     async def call(self, operation):
+        """Run one hub request. A stale session is logged in again and tried once more."""
         async with self._guard():
             hub = await self._open()
             try:
                 return await operation(hub)
+            except Exception as err:
+                if not _session_expired(err):
+                    if isinstance(err, HubError):
+                        raise
+                    raise HubError(str(err)) from err
+                hub = await self._reauthenticate(hub)
+            try:
+                return await operation(hub)
             except HubError:
                 raise
-            except Exception as err:
-                if poc.is_auth_failure(err) or not _session_expired(err):
-                    raise HubError(str(err)) from err
-                self._hub = None
-                hub = await self._open()
-                try:
-                    return await operation(hub)
-                except Exception as retry_err:
-                    raise HubError(str(retry_err)) from retry_err
+            except Exception as retry_err:
+                raise HubError(str(retry_err)) from retry_err
 
     async def list_cameras(self) -> tuple[list[Device], str]:
         """List cameras, preferring ``get_child_device_list_json``."""
@@ -491,11 +528,15 @@ class HubSession:
             try:
                 json_rows = await fetch_json_rows(hub)
             except Exception as err:
+                if _session_expired(err):
+                    raise
                 json_rows = []
                 errors.append(err)
             try:
                 general_devices = await hub.get_general_device_list()
             except Exception as err:
+                if _session_expired(err):
+                    raise
                 general_devices = []
                 errors.append(err)
             general_cameras, storage_by_id = cameras_from_general(general_devices)
@@ -506,6 +547,8 @@ class HubSession:
             try:
                 children = await hub.get_child_device_list()
             except Exception as err:
+                if _session_expired(err):
+                    raise
                 children = []
                 errors.append(err)
             if errors and not json_rows and not general_devices and not children:
