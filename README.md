@@ -2,7 +2,7 @@
 
 ## Overview
 
-This project focuses on building **local-first** home automation tools and applications. The initial priority is the **TP-Link Tapo ecosystem**, particularly local control and monitoring of hubs (e.g., H500), cameras, sensors, plugs, and related devices.
+This repository is a local dashboard for a TP-Link Tapo H500. It lists hub recordings, links live view through go2rtc, and controls plugs and lights on the LAN. The broader goal is local-first home automation for Tapo hubs, cameras, sensors, plugs, and related devices.
 
 TP-Link does not publish an official local API. All work relies on community reverse-engineered libraries and protocols. These are actively maintained but can occasionally break with firmware updates.
 
@@ -32,7 +32,7 @@ See [TAPO_RESOURCES.md](TAPO_RESOURCES.md) for libraries, protocols, and related
 - Install, test, and run the dashboard with [INSTALL.md](INSTALL.md)
 - Review [INITIAL_PLAN.md](INITIAL_PLAN.md)
 - Use the ready-made prompts in [PROMPTS.md](PROMPTS.md)
-- Document device inventory in a new `DEVICES.md` as details are collected
+- Read [DEVICES.md](DEVICES.md) for how devices are discovered. Do not commit device ids, account hashes, or LAN addresses.
 
 ## H500 recording check
 

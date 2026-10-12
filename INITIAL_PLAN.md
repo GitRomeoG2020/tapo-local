@@ -8,7 +8,7 @@
 
 - [x] Confirm H500 IP and basic reachability
 - [x] Verify cloud account credentials work locally
-- [x] Document snapshot of currently paired devices (see DEVICES.md)
+- [x] Keep discovery notes in DEVICES.md. Do not commit device ids or LAN addresses.
 - [ ] Optional: note any non-hub devices that have their own LAN IPs
 
 ## Phase 1: Connectivity Proof of Concept — **COMPLETE**
