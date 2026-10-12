@@ -1,0 +1,4 @@
+# Plugs, lights, and other non-camera Tapo devices.
+# One IPv4 address per line. A broadcast address such as 192.168.11.255 scans that subnet.
+# When every line is a comment, the dashboard scans the subnet of the H500.
+# When any address is listed, only those addresses are checked.

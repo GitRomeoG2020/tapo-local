@@ -90,6 +90,17 @@
       margin: 0.2rem 0 1rem;
     }
     .back { display: inline-block; margin-bottom: 0.8rem; }
+    .controls { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; margin-top: 0.55rem; }
+    .controls label { color: var(--muted); font-size: 0.92rem; display: inline-flex; gap: 0.35rem; align-items: center; }
+    .controls input[type="number"] {
+      font: inherit;
+      width: 4.5rem;
+      padding: 0.3rem 0.4rem;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--paper);
+      color: var(--ink);
+    }
   </style>
 </head>
 <body>
@@ -102,6 +113,7 @@
     <nav aria-label="Primary">
       <a href="/"{% if path == "/" or path.startswith("/devices") %} aria-current="page"{% endif %}>Cameras &amp; Recordings</a>
       <a href="/live"{% if path == "/live" %} aria-current="page"{% endif %}>Live View</a>
+      <a href="/controls"{% if path == "/controls" %} aria-current="page"{% endif %}>Devices</a>
     </nav>
   </header>
   <main>

@@ -7,6 +7,8 @@ Run from the project root:
 Routes:
     GET  /                                 paired cameras and doorbells
     GET  /live                             links to go2rtc live streams
+    GET  /controls                         plugs, lights, and other non-camera devices
+    POST /controls/power                   on, off, or brightness
     GET  /devices/{device_id}              recording days and one day's clips
     POST /devices/{device_id}/download     one clip as MPEG-TS
     POST /devices/{device_id}/download-day every clip from one day as a zip
@@ -15,9 +17,10 @@ Routes:
 
 Every page shares the top navigation. Live View reads stream names from
 ``bin/go2rtc.yaml`` and links each one to the go2rtc player on port 1984 of
-the same host. Stream URL values stay in that file. Plugs and lights can add
-routes beside these. They should use ``app.hub.session`` so they share the
-hub login.
+the same host. Stream URL values stay in that file. Plugs and lights are
+listed by ``app.controls`` from ``devices.txt`` or the H500 subnet, plus any
+devices in ``extra_devices.yaml``. They use the same account variables and
+do not use the hub recording session.
 """
 
 import re
@@ -25,10 +28,11 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
+from app.controls import ControlError, session as control_session
 from app.hub import (
     BadRequest,
     HubError,
@@ -212,6 +216,47 @@ async def download_clip(
 @app.get("/devices/{device_id}/download-day/progress")
 async def download_day_progress(device_id: str, day: str) -> dict:
     return session.day_download_progress(device_id, day)
+
+
+@app.get("/controls", response_class=HTMLResponse)
+async def controls_page(request: Request, refresh: bool = False) -> HTMLResponse:
+    listing = await control_session.list_devices(refresh=refresh)
+    return render(
+        request,
+        "controls.html",
+        {
+            "title": "Devices",
+            "devices": listing.devices,
+            "source": listing.source,
+            "error": listing.error,
+        },
+    )
+
+
+@app.post("/controls/power")
+async def control_power(
+    request: Request,
+    ip: str = Form(...),
+    action: str = Form(...),
+    child_id: str = Form(""),
+    brightness: str = Form(""),
+):
+    try:
+        await control_session.set_power(ip, child_id, action, brightness)
+    except ControlError as err:
+        listing = await control_session.list_devices()
+        return render(
+            request,
+            "controls.html",
+            {
+                "title": "Devices",
+                "devices": listing.devices,
+                "source": listing.source,
+                "error": str(err),
+            },
+            status_code=400,
+        )
+    return RedirectResponse("/controls", status_code=303)
 
 
 @app.post("/devices/{device_id}/download-day")

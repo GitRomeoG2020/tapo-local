@@ -1,0 +1,17 @@
+# Extra plugs and lights, including devices on another subnet or VLAN.
+# One device per list item. A missing file, or a file with only comments,
+# leaves the Devices page on the subnet scan.
+#
+# extra_devices:
+#   - ip: 192.168.0.24
+#     name: Music Room Bulb
+#   - ip: 192.168.0.55
+#     name: Smart Plug
+#
+# model is optional. Examples: L530, P110.
+
+extra_devices:
+  - ip: 192.168.250.121
+    name: Music Room Bulb
+  - ip: 192.168.250.44
+    name: P316M Power Strip IT Rack
