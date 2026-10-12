@@ -7,6 +7,7 @@ Run from the project root:
 Routes:
     GET  /                                 paired cameras and doorbells
     GET  /live                             links to go2rtc live streams
+    POST /live/sync                        add missing cameras to bin/go2rtc.yaml
     GET  /controls                         plugs, lights, and other non-camera devices
     POST /controls/power                   on, off, or brightness
     GET  /devices/{device_id}              recording days and one day's clips
@@ -17,12 +18,16 @@ Routes:
 
 Every page shares the top navigation. Live View reads stream names from
 ``bin/go2rtc.yaml`` and links each one to the go2rtc player on port 1984 of
-the same host. Stream URL values stay in that file. Plugs and lights are
+the same host. Stream URL values stay in that file. Sync cameras appends
+any paired camera that is not already listed there, and the page does not
+show those URLs. Plugs and lights are
 listed by ``app.controls`` from ``devices.txt`` or the H500 subnet, plus any
 devices in ``extra_devices.yaml``. They use the same account variables and
 do not use the hub recording session.
 """
 
+import hashlib
+import os
 import re
 from pathlib import Path
 from urllib.parse import quote
@@ -41,6 +46,7 @@ from app.hub import (
     remove_download,
     session,
 )
+import scripts.h500_poc as poc
 from scripts.h500_poc import LOOKBACK_DAYS
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -72,14 +78,16 @@ def _indent_width(line: str) -> int:
     return width
 
 
-def stream_names(path: Path) -> list[str]:
-    """Return go2rtc stream names. Stream URL values are never returned."""
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
+class Go2rtcConfigError(Exception):
+    """bin/go2rtc.yaml could not be read or written. The message has no secrets."""
 
-    names: list[str] = []
+
+_DEVICE_ID = re.compile(r"^[A-Fa-f0-9]{8,64}$")
+_DEVICE_ID_IN_URL = re.compile(r"deviceid=([A-Fa-f0-9]{8,64})", re.IGNORECASE)
+
+
+def iter_stream_entries(lines: list[str]):
+    """Yield ``(name, value)`` for each stream. Callers must not show ``value``."""
     in_streams = False
     for line in lines:
         stripped = line.strip()
@@ -91,10 +99,182 @@ def stream_names(path: Path) -> list[str]:
             continue
         if not in_streams or indent != 2 or ":" not in stripped:
             continue
-        name = stripped.split(":", 1)[0].strip().strip("'\"")
+        name, value = stripped.split(":", 1)
+        name = name.strip().strip("'\"")
         if _STREAM_NAME.fullmatch(name):
-            names.append(name)
-    return names
+            yield name, value.strip()
+
+
+def stream_names(path: Path) -> list[str]:
+    """Return go2rtc stream names. Stream URL values are never returned."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [name for name, _value in iter_stream_entries(lines)]
+
+
+def _read_go2rtc_text(path: Path) -> str | None:
+    """Return the yaml text, or None when the file does not exist yet."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as err:
+        reason = err.strerror or "the file could not be opened"
+        raise Go2rtcConfigError(
+            f"Could not read bin/go2rtc.yaml: {reason}. Nothing was changed."
+        ) from err
+
+
+def _streams_insert_at(lines: list[str]) -> int | None:
+    """Line index where new streams belong, or None when there is no streams key."""
+    start = None
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if _indent_width(line) == 0 and stripped == "streams:":
+            start = index
+            break
+    if start is None:
+        return None
+    insert = start + 1
+    for index in range(start + 1, len(lines)):
+        stripped = lines[index].strip()
+        if not stripped or stripped.startswith("#"):
+            insert = index + 1
+            continue
+        if _indent_width(lines[index]) == 0:
+            break
+        insert = index + 1
+    return insert
+
+
+def _stream_name_for(camera_name: str, used: set[str]) -> str:
+    """A go2rtc name from a camera label. An existing name gets a numeric suffix."""
+    words = re.sub(r"[^a-z0-9]+", "_", (camera_name or "").strip().lower()).strip("_")
+    base = words[:64] if words else "camera"
+    if not _STREAM_NAME.fullmatch(base):
+        base = "camera"
+    candidate = base
+    number = 2
+    while candidate in used or not _STREAM_NAME.fullmatch(candidate):
+        suffix = f"_{number}"
+        candidate = f"{base[: 64 - len(suffix)]}{suffix}"
+        number += 1
+        if number > 100:
+            candidate = f"camera_{number}"
+            break
+    used.add(candidate)
+    return candidate
+
+
+def _password_sha256() -> str:
+    """Uppercase SHA256 of TAPO_PASSWORD. The hash is not returned to the page."""
+    password = os.getenv("TAPO_PASSWORD", "").strip()
+    if not password:
+        raise Go2rtcConfigError(
+            "Set TAPO_PASSWORD to the cloud TP-Link account password. "
+            "A new go2rtc stream uses the uppercase SHA256 of that password, "
+            "and bin/go2rtc.yaml was not changed."
+        )
+    return hashlib.sha256(password.encode("utf-8")).hexdigest().upper()
+
+
+def _english_list(names: list[str]) -> str:
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+
+def sync_notice(synced: str | None) -> str:
+    """Success text for /live. Only validated stream names are included."""
+    if not synced:
+        return ""
+    if synced == "none":
+        return "Every paired camera already has a stream in bin/go2rtc.yaml."
+    names = [part.strip() for part in synced.split(",")]
+    names = [name for name in names if _STREAM_NAME.fullmatch(name)]
+    if not names:
+        return ""
+    added = _english_list(names)
+    return (
+        f"Added {added} to bin/go2rtc.yaml. "
+        "Restart go2rtc for the changes to take effect: "
+        "sudo systemctl restart go2rtc. "
+        "On Windows, stop go2rtc.exe and start it again. "
+        "The new tapo:// password is the uppercase SHA256 of TAPO_PASSWORD "
+        "and is stored only in that file."
+    )
+
+
+def sync_go2rtc_file(path: Path, cameras) -> list[str]:
+    """Append hub cameras whose device id is not already in the yaml.
+
+    Existing lines are kept. The returned names are safe to show. The written
+    URL is not.
+    """
+    current = _read_go2rtc_text(path)
+    lines = [] if current is None else current.splitlines()
+    present = {
+        device_id.lower()
+        for _name, value in iter_stream_entries(lines)
+        for device_id in _DEVICE_ID_IN_URL.findall(value)
+    }
+    used = {name for name, _value in iter_stream_entries(lines)}
+    additions = []
+    for camera in cameras:
+        device_id = str(getattr(camera, "device_id", "") or "").strip()
+        if not _DEVICE_ID.fullmatch(device_id) or device_id.lower() in present:
+            continue
+        name = _stream_name_for(getattr(camera, "name", ""), used)
+        additions.append((name, device_id))
+        present.add(device_id.lower())
+    if not additions:
+        return []
+
+    password_hash = _password_sha256()
+    hub_ip = poc.H500_IP
+    new_lines = [
+        (
+            f"  {name}: tapo://admin:{password_hash}@{hub_ip}/?deviceId={device_id}"
+        )
+        for name, device_id in additions
+    ]
+    insert_at = _streams_insert_at(lines)
+    if insert_at is None:
+        if lines and lines[-1] != "":
+            lines.append("")
+        lines.append("streams:")
+        lines.extend(new_lines)
+    else:
+        lines[insert_at:insert_at] = new_lines
+    ending = "\r\n" if current and "\r\n" in current else "\n"
+    text = ending.join(lines)
+    if text and not text.endswith(("\n", "\r\n")):
+        text += ending
+
+    temporary = path.with_name(path.name + ".tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.write_text(text, encoding="utf-8", newline="")
+        temporary.replace(path)
+    except OSError as err:
+        reason = err.strerror or "the file could not be saved"
+        raise Go2rtcConfigError(
+            f"Could not write bin/go2rtc.yaml: {reason}. "
+            "Existing streams were left as they were."
+        ) from err
+    finally:
+        try:
+            if temporary.exists():
+                temporary.unlink()
+        except OSError:
+            pass
+    return [name for name, _device_id in additions]
 
 
 def stream_label(name: str) -> str:
@@ -157,8 +337,38 @@ async def live_view(request: Request) -> HTMLResponse:
     return render(
         request,
         "live.html",
-        {"title": "Live view", "streams": streams, "go2rtc_url": go2rtc_url},
+        {
+            "title": "Live view",
+            "streams": streams,
+            "go2rtc_url": go2rtc_url,
+            "notice": sync_notice(request.query_params.get("synced")),
+            "error": "",
+        },
     )
+
+
+@app.post("/live/sync", response_class=HTMLResponse)
+async def sync_live_cameras(request: Request) -> HTMLResponse:
+    """Add H500 cameras that are missing from bin/go2rtc.yaml."""
+    try:
+        cameras, _source = await session.list_cameras()
+        added = sync_go2rtc_file(GO2RTC_CONFIG, cameras)
+    except Go2rtcConfigError as err:
+        go2rtc_url, streams = live_streams(request.url.hostname)
+        return render(
+            request,
+            "live.html",
+            {
+                "title": "Live view",
+                "streams": streams,
+                "go2rtc_url": go2rtc_url,
+                "notice": "",
+                "error": str(err),
+            },
+            status_code=400,
+        )
+    synced = "none" if not added else ",".join(added)
+    return RedirectResponse(f"/live?synced={quote(synced, safe=',')}", status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)

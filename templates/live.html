@@ -2,6 +2,16 @@
 {% block content %}
 <h1>Live view</h1>
 <p class="muted">Each camera opens in go2rtc on this computer, port 1984.</p>
+{% if notice %}
+  <p class="notice">{{ notice }}</p>
+{% endif %}
+{% if error %}
+  <p class="error">{{ error }}</p>
+{% endif %}
+<form class="page-actions" method="post" action="/live/sync">
+  <button type="submit">Sync cameras to go2rtc</button>
+</form>
+<p class="muted">The button appends paired cameras that are not already in <code>bin/go2rtc.yaml</code>. Existing streams stay as they are. A new <code>tapo://</code> password is the uppercase SHA256 of <code>TAPO_PASSWORD</code>.</p>
 {% if streams %}
   <div class="cards">
     {% for stream in streams %}

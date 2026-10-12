@@ -84,6 +84,8 @@ $hash
 
 The Live View page lists each name under `streams` and links to `http://<host>:1984/stream.html?src=<name>`. It also links to the full go2rtc UI on port 1984. Stream URL values stay in the yaml.
 
+Live View has a Sync cameras to go2rtc button. It uses the same hub camera list as the Cameras page and appends any camera whose device id is not already in `bin/go2rtc.yaml`. Existing stream lines are left as they are. Each new line looks like `tapo://admin:UPPERCASE_SHA256@<hub-ip>/?deviceId=<id>`. The hash is the uppercase SHA256 of `TAPO_PASSWORD`. After the page names what it added, restart go2rtc so the new streams load: `sudo systemctl restart go2rtc`. On Windows, stop `go2rtc.exe` and start it again.
+
 ## 4. Extra devices (optional)
 
 Plugs and lights on another subnet or VLAN go in `extra_devices.yaml` in the project root. The file is optional. When it is missing, or it only has comments, the Devices page stays on the subnet scan.
