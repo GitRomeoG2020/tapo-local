@@ -33,6 +33,21 @@ See [TAPO_RESOURCES.md](TAPO_RESOURCES.md) for libraries, protocols, and related
 - Use the ready-made prompts in [PROMPTS.md](PROMPTS.md)
 - Document device inventory in a new `DEVICES.md` as details are collected
 
+## H500 recording check
+
+`scripts/h500_poc.py` logs in to the H500 at `192.168.11.223`, lists paired cameras, and prints recording days from the last 7 days plus clips on the newest day. It does not download video.
+
+Use the cloud TP-Link account that owns the hub. Set the variables in the shell. Do not put them in the script or in this repository.
+
+```powershell
+python -m pip install "tapo>=0.10"
+$env:TAPO_USERNAME = "you@example.com"
+$env:TAPO_PASSWORD = "your-tapo-password"
+python scripts/h500_poc.py
+```
+
+`tapo` 0.10 or newer is required for H500 recordings. A direct login uses AES. If the hub only accepts TPAP (Third-Party Compatibility off in the Tapo app), the script scans the subnet once and uses the hub it finds at that address. `tapo` 0.11 speaks TPAP to an H500 through discovery. A rejected password is not retried, because a locked hub refuses further logins for a while.
+
 ## Status
 
 - Project initialized from prior research chat
