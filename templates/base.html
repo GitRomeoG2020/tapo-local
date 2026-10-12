@@ -27,10 +27,19 @@
     header {
       background: #1f2933;
       color: white;
-      padding: 0.9rem 1.25rem;
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem 1.5rem;
     }
     header a { color: white; text-decoration: none; }
     header p { margin: 0.2rem 0 0; color: #c5ced8; font-size: 0.92rem; }
+    nav { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+    nav a { padding: 0.35rem 0.65rem; border-radius: 6px; }
+    nav a:hover { background: rgba(255, 255, 255, 0.1); }
+    nav a[aria-current="page"] { background: rgba(255, 255, 255, 0.16); font-weight: 600; }
     main { max-width: 52rem; margin: 0 auto; padding: 1.25rem; }
     h1 { font-size: 1.45rem; margin: 0 0 0.8rem; }
     a { color: var(--accent); }
@@ -85,8 +94,15 @@
 </head>
 <body>
   <header>
-    <a href="/"><strong>H500</strong></a>
-    <p>Local cameras and hub recordings</p>
+    <div>
+      <a href="/"><strong>H500</strong></a>
+      <p>Local cameras and hub recordings</p>
+    </div>
+    {% set path = request.url.path %}
+    <nav aria-label="Primary">
+      <a href="/"{% if path == "/" or path.startswith("/devices") %} aria-current="page"{% endif %}>Cameras &amp; Recordings</a>
+      <a href="/live"{% if path == "/live" %} aria-current="page"{% endif %}>Live View</a>
+    </nav>
   </header>
   <main>
     {% block content %}{% endblock %}

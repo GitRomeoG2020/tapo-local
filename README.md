@@ -52,7 +52,9 @@ python scripts/h500_poc.py
 
 `app/main.py` is a local page for the same hub. It lists paired cameras and doorbells with name, model, and hub storage. Open a device to see recording days from the last 7 days. The page opens on the newest day. Each day is a link to that day's clips. Each clip has a Download button that saves that recording as MPEG-TS. Download all clips for this day saves every clip from the selected day into one zip file. That can take a while, because the hub sends the clips one at a time.
 
-The camera list prefers `get_child_device_list_json()`. If that list has no cameras or doorbells, the page uses `get_general_device_list()`, then `get_child_device_list()`. Login and device filtering are the same helpers as `scripts/h500_poc.py`. Plugs, lights, and live view are not in this version. Add them as new routes that use the shared session in `app/hub.py`.
+The camera list prefers `get_child_device_list_json()`. If that list has no cameras or doorbells, the page uses `get_general_device_list()`, then `get_child_device_list()`. Login and device filtering are the same helpers as `scripts/h500_poc.py`.
+
+Every page has the same top navigation. Cameras & Recordings is this home page. Live View lists the stream names in `go2rtc.yaml` and links each one to the go2rtc player at `http://<host>:1984/stream.html?src=<name>`. It also links to the full go2rtc UI on port 1984. go2rtc is assumed to be running on the same computer. Plugs and lights are not in this version. Add them as new routes that use the shared session in `app/hub.py`.
 
 The account is read from `TAPO_USERNAME` and `TAPO_PASSWORD`. Do not put those values in the code or in this repository.
 
