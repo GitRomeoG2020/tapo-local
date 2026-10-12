@@ -3,15 +3,31 @@
 <h1>Paired cameras and doorbells</h1>
 {% if devices %}
   <p class="muted">Listed from {{ source }}.</p>
-  <div class="cards">
+  <p class="muted">Battery is the percentage reported with this list. Each preview loads on its own after the list is on screen. The hub library has no snapshot for an H500 camera, so a sleeping camera or a camera without a stream shows a placeholder.</p>
+  <div class="cards camera-list">
     {% for device in devices %}
-      <a class="card" href="/devices/{{ device.device_id }}">
-        <strong>{{ device.name }}</strong>
-        <div class="meta">
-          <span>Model {{ device.model }}</span>
-          <span class="status{% if device.hub_storage != 'on' %} off{% endif %}">Hub storage: {{ device.hub_storage }}</span>
-        </div>
-      </a>
+      <article class="card camera-card">
+        <a class="thumb-link" href="/devices/{{ device.device_id }}">
+          <img
+            class="thumb"
+            src="/devices/{{ device.device_id }}/thumbnail"
+            alt="Preview of {{ device.name }}"
+            loading="lazy"
+            decoding="async"
+            width="320"
+            height="180"
+            onerror="this.onerror=null;this.classList.add('thumb-missing');this.removeAttribute('src');"
+          >
+        </a>
+        <a class="card-body" href="/devices/{{ device.device_id }}">
+          <strong>{{ device.name }}</strong>
+          <div class="meta">
+            <span>Model {{ device.model }}</span>
+            <span>Battery {{ device.battery_label }}</span>
+            <span class="status{% if device.hub_storage != 'on' %} off{% endif %}">Hub storage: {{ device.hub_storage }}</span>
+          </div>
+        </a>
+      </article>
     {% endfor %}
   </div>
 {% else %}

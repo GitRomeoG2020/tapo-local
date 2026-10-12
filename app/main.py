@@ -7,10 +7,12 @@ Run from the project root:
 Routes:
     GET  /                                 paired cameras and doorbells
     GET  /live                             links to go2rtc live streams
+    GET  /live/thumbnail/{stream_name}     one go2rtc frame, or a placeholder image
     POST /live/sync                        add missing cameras to bin/go2rtc.yaml
     GET  /controls                         plugs, lights, and other non-camera devices
     POST /controls/power                   on, off, or brightness
     GET  /devices/{device_id}              recording days and one day's clips
+    GET  /devices/{device_id}/thumbnail    one go2rtc frame, or a placeholder image
     POST /devices/{device_id}/download     one clip as MPEG-TS
     POST /devices/{device_id}/download-day every clip from one day as a zip
     GET  /devices/{device_id}/download-day/progress
@@ -20,20 +22,25 @@ Every page shares the top navigation. Live View reads stream names from
 ``bin/go2rtc.yaml`` and links each one to the go2rtc player on port 1984 of
 the same host. Stream URL values stay in that file. Sync cameras appends
 any paired camera that is not already listed there, and the page does not
-show those URLs. Plugs and lights are
+show those URLs. Camera thumbnails are a separate request: the hub library
+has no snapshot for an H500 child, so the thumbnail route asks go2rtc for
+one JPEG frame and returns a placeholder image when that fails. Plugs and lights are
 listed by ``app.controls`` from ``devices.txt`` or the H500 subnet, plus any
 devices in ``extra_devices.yaml``. They use the same account variables and
 do not use the hub recording session.
 """
 
+import asyncio
 import hashlib
 import os
 import re
+import urllib.error
+import urllib.request
 from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
@@ -54,6 +61,19 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 GO2RTC_PORT = 1984
 GO2RTC_CONFIG = ROOT / "bin" / "go2rtc.yaml"
+# A sleeping battery camera can take a long time to wake. The cameras page
+# does not wait on this; the thumbnail request gives up and shows a placeholder.
+FRAME_TIMEOUT_S = 8
+FRAME_MAX_BYTES = 2_000_000
+_PLACEHOLDER_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" role="img" aria-label="No preview">
+  <rect width="320" height="180" fill="#e2e8f0"/>
+  <g fill="none" stroke="#64748b" stroke-width="2">
+    <rect x="128" y="58" width="64" height="44" rx="6"/>
+    <circle cx="160" cy="80" r="10"/>
+  </g>
+  <text x="160" y="128" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="14" fill="#64748b">No preview</text>
+</svg>
+"""
 # go2rtc stream names are short tokens. Reject anything else before it is
 # placed in a link.
 _STREAM_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
@@ -105,13 +125,26 @@ def iter_stream_entries(lines: list[str]):
             yield name, value.strip()
 
 
-def stream_names(path: Path) -> list[str]:
-    """Return go2rtc stream names. Stream URL values are never returned."""
+def stream_device_ids(path: Path) -> list[tuple[str, str | None]]:
+    """``(stream name, device id)`` for each stream. URL values are not returned.
+
+    The device id is the ``deviceId`` query on that stream's URL. A stream
+    with no id still keeps its name so Live View can link to it.
+    """
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return []
-    return [name for name, _value in iter_stream_entries(lines)]
+    rows = []
+    for name, value in iter_stream_entries(lines):
+        found = _DEVICE_ID_IN_URL.findall(value)
+        rows.append((name, found[0] if found else None))
+    return rows
+
+
+def stream_names(path: Path) -> list[str]:
+    """Return go2rtc stream names. Stream URL values are never returned."""
+    return [name for name, _device_id in stream_device_ids(path)]
 
 
 def _read_go2rtc_text(path: Path) -> str | None:
@@ -296,17 +329,111 @@ def go2rtc_origin(hostname: str | None) -> str:
     return f"http://{host}:{GO2RTC_PORT}"
 
 
-def live_streams(hostname: str | None) -> tuple[str, list[dict[str, str]]]:
-    """Full go2rtc UI URL, plus one player link per configured stream."""
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse a redirect so a frame request stays on this host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
+_FRAME_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def stream_name_for_device(path: Path, device_id: str) -> str | None:
+    """go2rtc stream whose URL contains this device id. The URL is not returned."""
+    if not _DEVICE_ID.fullmatch(device_id or ""):
+        return None
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    wanted = device_id.lower()
+    for name, value in iter_stream_entries(lines):
+        if any(found.lower() == wanted for found in _DEVICE_ID_IN_URL.findall(value)):
+            return name
+    return None
+
+
+def fetch_go2rtc_jpeg(stream_name: str) -> bytes | None:
+    """One JPEG from local go2rtc, or None when the frame is unavailable.
+
+    ``CameraHubHandler`` has no snapshot for a child camera. go2rtc already
+    holds the stream URL, so this asks it for ``/api/frame.jpeg``.
+    """
+    if not _STREAM_NAME.fullmatch(stream_name or ""):
+        return None
+    url = f"http://127.0.0.1:{GO2RTC_PORT}/api/frame.jpeg?src={quote(stream_name, safe='')}"
+    request = urllib.request.Request(url, headers={"Accept": "image/jpeg"})
+    try:
+        with _FRAME_OPENER.open(request, timeout=FRAME_TIMEOUT_S) as response:
+            content_type = (response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if content_type and content_type not in {"image/jpeg", "image/jpg"}:
+                return None
+            data = response.read(FRAME_MAX_BYTES + 1)
+    except Exception:
+        return None
+    if len(data) < 3 or len(data) > FRAME_MAX_BYTES or not data.startswith(b"\xff\xd8"):
+        return None
+    return data
+
+
+def _thumbnail_bytes(device_id: str) -> bytes | None:
+    name = stream_name_for_device(GO2RTC_CONFIG, device_id)
+    if not name:
+        return None
+    return fetch_go2rtc_jpeg(name)
+
+
+def _placeholder_response() -> Response:
+    return Response(
+        content=_PLACEHOLDER_SVG,
+        media_type="image/svg+xml",
+        headers={
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+def _frame_response(frame: bytes | None) -> Response:
+    """JPEG when a frame was read, otherwise the placeholder image."""
+    if not frame:
+        return _placeholder_response()
+    return Response(
+        content=frame,
+        media_type="image/jpeg",
+        headers={
+            "Cache-Control": "private, max-age=30",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+def live_streams(hostname: str | None, cameras=()) -> tuple[str, list[dict[str, str]]]:
+    """Full go2rtc UI URL, plus one player link per configured stream.
+
+    ``cameras`` supplies battery labels matched by device id. The stream URL
+    values stay in the yaml. A stream with no matching camera uses an em dash.
+    """
+    by_id = {}
+    for camera in cameras or []:
+        device_id = str(getattr(camera, "device_id", "") or "").strip()
+        if device_id:
+            by_id[device_id.lower()] = camera
     origin = go2rtc_origin(hostname)
-    streams = [
-        {
-            "name": name,
-            "label": stream_label(name),
-            "url": f"{origin}/stream.html?src={quote(name, safe='')}",
-        }
-        for name in stream_names(GO2RTC_CONFIG)
-    ]
+    streams = []
+    for name, device_id in stream_device_ids(GO2RTC_CONFIG):
+        camera = by_id.get(device_id.lower()) if device_id else None
+        battery_label = camera.battery_label if camera is not None else "—"
+        streams.append(
+            {
+                "name": name,
+                "label": stream_label(name),
+                "url": f"{origin}/stream.html?src={quote(name, safe='')}",
+                "battery_label": battery_label,
+                "thumbnail": f"/live/thumbnail/{quote(name, safe='')}",
+            }
+        )
     return f"{origin}/", streams
 
 
@@ -331,9 +458,19 @@ async def show_hub_error(request: Request, exc: HubError) -> HTMLResponse:
     )
 
 
+async def _cameras_or_empty():
+    """Hub cameras for battery labels. A hub failure leaves those labels blank."""
+    try:
+        cameras, _source = await session.list_cameras()
+    except HubError:
+        return []
+    return cameras
+
+
 @app.get("/live", response_class=HTMLResponse)
 async def live_view(request: Request) -> HTMLResponse:
-    go2rtc_url, streams = live_streams(request.url.hostname)
+    cameras = await _cameras_or_empty()
+    go2rtc_url, streams = live_streams(request.url.hostname, cameras)
     return render(
         request,
         "live.html",
@@ -354,7 +491,7 @@ async def sync_live_cameras(request: Request) -> HTMLResponse:
         cameras, _source = await session.list_cameras()
         added = sync_go2rtc_file(GO2RTC_CONFIG, cameras)
     except Go2rtcConfigError as err:
-        go2rtc_url, streams = live_streams(request.url.hostname)
+        go2rtc_url, streams = live_streams(request.url.hostname, cameras)
         return render(
             request,
             "live.html",
@@ -371,6 +508,22 @@ async def sync_live_cameras(request: Request) -> HTMLResponse:
     return RedirectResponse(f"/live?synced={quote(synced, safe=',')}", status_code=303)
 
 
+@app.get("/live/thumbnail/{stream_name}")
+async def live_thumbnail(stream_name: str) -> Response:
+    """One frame for a Live View card. Failure is a placeholder, not an error page.
+
+    The name has to be a stream already listed in bin/go2rtc.yaml. This does
+    not call the hub and does not read the stream URL into the response.
+    """
+    if stream_name not in set(stream_names(GO2RTC_CONFIG)):
+        return _placeholder_response()
+    try:
+        frame = await asyncio.to_thread(fetch_go2rtc_jpeg, stream_name)
+    except Exception:
+        frame = None
+    return _frame_response(frame)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request) -> HTMLResponse:
     cameras, source = await session.list_cameras()
@@ -379,6 +532,20 @@ async def home(request: Request) -> HTMLResponse:
         "index.html",
         {"title": "Cameras", "devices": cameras, "source": source},
     )
+
+
+@app.get("/devices/{device_id}/thumbnail")
+async def camera_thumbnail(device_id: str) -> Response:
+    """One frame for a camera card. Failure is a placeholder image, not an error page.
+
+    This does not call the hub. The cameras page renders the list first and
+    loads this URL from an image tag.
+    """
+    try:
+        frame = await asyncio.to_thread(_thumbnail_bytes, device_id)
+    except Exception:
+        frame = None
+    return _frame_response(frame)
 
 
 @app.get("/devices/{device_id}", response_class=HTMLResponse)

@@ -121,6 +121,41 @@
       box-shadow: 0 0 0 3px var(--highlight);
     }
     .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
+    .camera-card {
+      flex-direction: row;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem;
+    }
+    .camera-card:hover {
+      border-color: #bfdbfe;
+      box-shadow: 0 0 0 3px var(--highlight);
+    }
+    .thumb-link {
+      flex: 0 0 12.5rem;
+      display: block;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #e2e8f0;
+      line-height: 0;
+    }
+    .thumb {
+      display: block;
+      width: 12.5rem;
+      height: 7rem;
+      object-fit: cover;
+      background: #e2e8f0;
+    }
+    .thumb-missing { background: #e2e8f0; }
+    .camera-card .card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      min-width: 0;
+      flex: 1;
+      text-decoration: none;
+      color: inherit;
+    }
     .card strong { display: block; font-size: 1.05rem; color: var(--ink); }
     .meta { display: flex; gap: 0.45rem 0.85rem; flex-wrap: wrap; align-items: center; color: var(--muted); font-size: 0.92rem; }
     .status {
@@ -222,6 +257,7 @@
     }
     @media (min-width: 700px) {
       .cards { grid-template-columns: 1fr 1fr; }
+      .cards.camera-list { grid-template-columns: 1fr; }
     }
     @media (max-width: 640px) {
       header { padding: 0.85rem 1rem; }
@@ -229,6 +265,9 @@
       nav a { flex: 1 1 auto; text-align: center; }
       main { padding: 1.15rem 0.9rem 2rem; }
       h1 { font-size: 1.45rem; }
+      .camera-card { flex-direction: column; align-items: stretch; }
+      .thumb-link, .thumb { width: 100%; flex-basis: auto; height: auto; }
+      .thumb { aspect-ratio: 16 / 9; }
     }
   </style>
 </head>

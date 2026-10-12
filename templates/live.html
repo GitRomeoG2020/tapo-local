@@ -13,14 +13,30 @@
 </form>
 <p class="muted">The button appends paired cameras that are not already in <code>bin/go2rtc.yaml</code>. Existing streams stay as they are. A new <code>tapo://</code> password is the uppercase SHA256 of <code>TAPO_PASSWORD</code>.</p>
 {% if streams %}
-  <div class="cards">
+  <p class="muted">Battery is the percentage reported by the hub for that stream. Each preview loads on its own after this list. A sleeping camera, or a stream go2rtc cannot frame, shows a placeholder.</p>
+  <div class="cards camera-list">
     {% for stream in streams %}
-      <a class="card" href="{{ stream.url }}">
-        <strong>{{ stream.label }}</strong>
-        <div class="meta">
-          <span>{{ stream.name }}</span>
-        </div>
-      </a>
+      <article class="card camera-card">
+        <a class="thumb-link" href="{{ stream.url }}">
+          <img
+            class="thumb"
+            src="{{ stream.thumbnail }}"
+            alt="Preview of {{ stream.label }}"
+            loading="lazy"
+            decoding="async"
+            width="320"
+            height="180"
+            onerror="this.onerror=null;this.classList.add('thumb-missing');this.removeAttribute('src');"
+          >
+        </a>
+        <a class="card-body" href="{{ stream.url }}">
+          <strong>{{ stream.label }}</strong>
+          <div class="meta">
+            <span>{{ stream.name }}</span>
+            <span>Battery {{ stream.battery_label }}</span>
+          </div>
+        </a>
+      </article>
     {% endfor %}
   </div>
 {% else %}

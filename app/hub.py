@@ -46,13 +46,25 @@ class NotFound(HubError):
 
 @dataclass
 class Device:
-    """One camera or doorbell the home page can link to."""
+    """One camera or doorbell the home page can link to.
+
+    ``battery`` is a percentage from the same hub payload that listed the
+    camera. It stays unset when that payload does not report one.
+    """
 
     name: str
     model: str
     device_id: str
     hub_storage: str
     kind: str = "camera"
+    battery: int | None = None
+
+    @property
+    def battery_label(self) -> str:
+        """Percentage the hub reported, or an em dash when it did not."""
+        if self.battery is None:
+            return "—"
+        return f"{self.battery}%"
 
 
 @dataclass
@@ -147,6 +159,91 @@ def parse_timestamp(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise BadRequest("Clip time must include a timezone.")
     return parsed
+
+
+# Names the hub uses for a 0–100 battery reading. A bare "battery" value is
+# accepted only when it is already a number in that range.
+_BATTERY_KEYS = (
+    "battery_percentage",
+    "batteryPercentage",
+    "battery_percent",
+    "batteryPercent",
+)
+
+
+def _percent_number(value) -> int | None:
+    """Return ``value`` as a percentage, or None when it is not 0–100."""
+    if isinstance(value, bool) or isinstance(value, (dict, list)) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        text = value.strip().rstrip("%").strip()
+        if not text:
+            return None
+        try:
+            number = float(text)
+        except ValueError:
+            return None
+    else:
+        return None
+    if number < 0 or number > 100:
+        return None
+    return int(round(number))
+
+
+def _battery_from_mapping(data: dict) -> int | None:
+    """Battery percentage from one device object, including one nested level."""
+    for key in _BATTERY_KEYS:
+        if key in data:
+            found = _percent_number(data.get(key))
+            if found is not None:
+                return found
+    battery = data.get("battery")
+    if isinstance(battery, dict):
+        for key in _BATTERY_KEYS:
+            if key in battery:
+                found = _percent_number(battery.get(key))
+                if found is not None:
+                    return found
+        found = _percent_number(battery.get("battery"))
+        if found is not None:
+            return found
+    else:
+        found = _percent_number(battery)
+        if found is not None:
+            return found
+    for value in data.values():
+        if not isinstance(value, dict):
+            continue
+        for key in _BATTERY_KEYS:
+            if key in value:
+                found = _percent_number(value.get(key))
+                if found is not None:
+                    return found
+    return None
+
+
+def parse_battery(source) -> int | None:
+    """0–100 when ``source`` reports a battery percentage, else None."""
+    if isinstance(source, dict):
+        return _battery_from_mapping(source)
+    for key in (*_BATTERY_KEYS, "battery"):
+        found = _percent_number(getattr(source, key, None))
+        if found is not None:
+            return found
+    data = poc.as_dict(source)
+    if data:
+        return _battery_from_mapping(data)
+    return None
+
+
+def _camera_battery(source, device_id: str, battery_by_id: dict[str, int] | None) -> int | None:
+    """Percentage on this row, or the same device's percentage from another list."""
+    battery = parse_battery(source)
+    if battery is None and battery_by_id:
+        return battery_by_id.get(str(device_id))
+    return battery
 
 
 def storage_label(value) -> str:
@@ -245,11 +342,16 @@ def _recording_type(value) -> str:
     return text or "unknown"
 
 
-def cameras_from_json(rows: list[dict], storage_by_id: dict[str, str]) -> list[Device]:
+def cameras_from_json(
+    rows: list[dict],
+    storage_by_id: dict[str, str],
+    battery_by_id: dict[str, int] | None = None,
+) -> list[Device]:
     """Cameras and doorbells in a raw ``get_child_device_list_json`` payload.
 
     Hub storage is taken from the matching general-list entry when the raw
-    row does not include the flag.
+    row does not include the flag. Battery is read from the row, then from
+    ``battery_by_id`` when the row omits it.
     """
     cameras = []
     seen = set()
@@ -269,7 +371,15 @@ def cameras_from_json(rows: list[dict], storage_by_id: dict[str, str]) -> list[D
         if storage == "not reported":
             storage = storage_by_id.get(device_id, "not reported")
         name = poc.display_name(poc.first_value(row, "alias", "nickname", "name"))
-        cameras.append(Device(name, str(model), str(device_id), storage))
+        cameras.append(
+            Device(
+                name,
+                str(model),
+                str(device_id),
+                storage,
+                battery=_camera_battery(row, str(device_id), battery_by_id),
+            )
+        )
     return cameras
 
 
@@ -296,11 +406,17 @@ def cameras_from_general(devices) -> tuple[list[Device], dict[str, str]]:
             or poc.first_value(data, "device_model", "model")
             or "(unknown model)"
         )
-        cameras.append(Device(name, str(model), str(device_id), label))
+        cameras.append(
+            Device(name, str(model), str(device_id), label, battery=parse_battery(device))
+        )
     return cameras, storage_by_id
 
 
-def cameras_from_children(devices, storage_by_id: dict[str, str]) -> list[Device]:
+def cameras_from_children(
+    devices,
+    storage_by_id: dict[str, str],
+    battery_by_id: dict[str, int] | None = None,
+) -> list[Device]:
     """Camera-like entries from the typed child list."""
     cameras = []
     for device in devices or []:
@@ -327,6 +443,7 @@ def cameras_from_children(devices, storage_by_id: dict[str, str]) -> list[Device
                 str(model or "(unknown model)"),
                 str(device_id),
                 storage_by_id.get(str(device_id), "not reported"),
+                battery=_camera_battery(device, str(device_id), battery_by_id),
             )
         )
     return cameras
@@ -540,7 +657,12 @@ class HubSession:
                 general_devices = []
                 errors.append(err)
             general_cameras, storage_by_id = cameras_from_general(general_devices)
-            json_cameras = cameras_from_json(json_rows, storage_by_id)
+            battery_by_id = {
+                camera.device_id: camera.battery
+                for camera in general_cameras
+                if camera.battery is not None
+            }
+            json_cameras = cameras_from_json(json_rows, storage_by_id, battery_by_id)
             if json_cameras:
                 return choose_cameras(json_cameras, general_cameras, [])
 
@@ -553,7 +675,7 @@ class HubSession:
                 errors.append(err)
             if errors and not json_rows and not general_devices and not children:
                 raise HubError(str(errors[0]))
-            child_cameras = cameras_from_children(children, storage_by_id)
+            child_cameras = cameras_from_children(children, storage_by_id, battery_by_id)
             return choose_cameras(json_cameras, general_cameras, child_cameras)
 
         return await self.call(operation)
