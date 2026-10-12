@@ -7,7 +7,9 @@ Requires tapo >= 0.10 (H500 recording support). tapo 0.11.1 is current on PyPI.
 """
 
 import asyncio
+import base64
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -22,6 +24,15 @@ MAX_CLIPS = 20
 
 # Discovery wait used only when a direct login cannot open a session.
 DISCOVERY_TIMEOUT_S = 10
+
+# get_child_device_list_json pages 10 children at a time. Stop well past the
+# H500's child-device capacity so a short page or a bad sum cannot loop.
+JSON_PAGE_SIZE = 10
+JSON_PAGE_LIMIT = 8
+
+# Tapo camera and doorbell model prefixes. Child-list entries use these when
+# the typed parser does not already label them as cameras.
+_CAMERA_MODEL = re.compile(r"^(C\d|TC\d|D\d)", re.IGNORECASE)
 
 
 def credentials_from_env() -> tuple[str, str]:
@@ -121,6 +132,235 @@ async def connect(client, ip: str):
     raise SystemExit(1)
 
 
+class CameraRecord:
+    """The four fields ``show_recordings`` already reads off a hub camera."""
+
+    def __init__(self, alias, device_model, device_id, hub_storage_enabled):
+        self.alias = alias or "(unnamed)"
+        self.device_model = device_model or "(unknown model)"
+        self.device_id = device_id
+        self.hub_storage_enabled = hub_storage_enabled
+
+
+def display_name(value) -> str:
+    """Return a nickname, decoding the base64 form the hub uses in raw JSON."""
+    if not isinstance(value, str) or not value.strip():
+        return "(unnamed)"
+    text = value.strip()
+    if re.fullmatch(r"[A-Za-z0-9+/]+={0,2}", text) and len(text) % 4 == 0:
+        try:
+            decoded = base64.b64decode(text, validate=True).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            return text
+        if decoded and decoded.isprintable():
+            return decoded
+    return text
+
+
+def as_dict(device) -> dict:
+    """Return ``to_dict()`` when the library object provides it."""
+    to_dict = getattr(device, "to_dict", None)
+    if not callable(to_dict):
+        return {}
+    try:
+        data = to_dict()
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def first_value(source, *names):
+    """First present attribute or dict entry among ``names``."""
+    for name in names:
+        if isinstance(source, dict):
+            value = source.get(name)
+        else:
+            value = getattr(source, name, None)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def looks_like_camera(model, category="") -> bool:
+    """True for a Tapo camera or doorbell model, or an explicit camera category.
+
+    ``get_general_device_list`` is already the camera list, so this check is
+    only for the child-device calls. Sensors such as T100 and T310 stay out.
+    """
+    blob = f"{model or ''} {category or ''}".lower()
+    if any(word in blob for word in ("camera", "ipc", "doorbell")):
+        return True
+    return bool(_CAMERA_MODEL.match(str(model or "")))
+
+
+def print_device_line(name, model, device_id, extra="") -> None:
+    suffix = f"  {extra}" if extra else ""
+    print(f"  name={display_name(name)}  model={model or '(unknown model)'}  id={device_id or '(no id)'}{suffix}")
+
+
+def summarize_general_devices(devices) -> list[CameraRecord]:
+    """Print the camera list and return a record for each entry.
+
+    ``get_general_device_list`` returns the standalone cameras paired to an
+    H200 or H500. These are the device IDs ``get_recording_dates`` and
+    ``get_recordings`` take. Each entry has an alias, a model, an id, and
+    whether hub storage is turned on for that camera.
+    """
+    cameras = []
+    print(f"get_general_device_list(): {len(devices)} device(s)")
+    if not devices:
+        print("  (none)")
+        return cameras
+    for device in devices:
+        data = as_dict(device)
+        name = first_value(device, "alias", "nickname") or first_value(data, "alias", "nickname")
+        model = first_value(device, "device_model", "model") or first_value(data, "device_model", "model")
+        device_id = first_value(device, "device_id") or first_value(data, "device_id")
+        storage = getattr(device, "hub_storage_enabled", None)
+        if storage is None:
+            storage = data.get("hub_storage_enabled")
+        storage_label = "not reported" if storage is None else ("on" if storage else "off")
+        print_device_line(name, model, device_id, f"hub_storage={storage_label}")
+        if device_id:
+            # An unreported flag still gets a recording query. An explicit
+            # false is the only case show_recordings skips.
+            cameras.append(
+                CameraRecord(display_name(name), model, device_id, storage is not False)
+            )
+    return cameras
+
+
+def summarize_child_devices(devices) -> list[CameraRecord]:
+    """Print sensors, switches, and any camera-like child, and return the cameras.
+
+    ``get_child_device_list`` returns the hub's child accessories: buttons,
+    sensors, switches, and other sub-GHz devices. The typed parser does not
+    treat cameras as children; the library points those at
+    ``get_general_device_list``. A model it does not recognize comes back as
+    ``OtherResult`` with a nickname, model, and id, so a battery camera can
+    still appear here. Only entries that look like cameras are returned.
+    """
+    cameras = []
+    print(f"get_child_device_list(): {len(devices)} device(s)")
+    if not devices:
+        print("  (none)")
+        return cameras
+    for device in devices:
+        data = as_dict(device)
+        name = first_value(device, "nickname", "alias") or first_value(data, "nickname", "alias")
+        model = first_value(device, "model", "device_model") or first_value(data, "model", "device_model")
+        device_id = first_value(device, "device_id") or first_value(data, "device_id")
+        category = first_value(device, "category", "type") or first_value(data, "category", "type")
+        kind = type(device).__name__
+        print_device_line(name, model, device_id, f"type={kind}")
+        if device_id and looks_like_camera(model, f"{category or ''} {kind}"):
+            # Child entries do not report hub_storage_enabled. Leave it on so
+            # the unchanged recording query still runs for this camera.
+            cameras.append(CameraRecord(display_name(name), model, device_id, True))
+    return cameras
+
+
+def _json_devices(node) -> list[dict]:
+    """Dicts in a raw child-list page that carry an id and a name or model."""
+    found = []
+
+    def walk(value) -> None:
+        if isinstance(value, dict):
+            device_id = first_value(value, "device_id", "deviceId")
+            name = first_value(value, "alias", "nickname", "name")
+            model = first_value(value, "device_model", "model")
+            if device_id and (name or model):
+                found.append(value)
+                return
+            for child in value.values():
+                walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    walk(node)
+    return found
+
+
+async def summarize_child_device_json(hub) -> list[CameraRecord]:
+    """Print the raw child list when the debug method exists.
+
+    ``get_child_device_list_json`` is the same child list with no typed
+    filtering, one page at a time. tapo-py ships it because the debug methods
+    are enabled. A build without it is reported and skipped.
+    """
+    method = getattr(hub, "get_child_device_list_json", None)
+    if not callable(method):
+        print("get_child_device_list_json(): not available on this tapo build.")
+        return []
+
+    pages = []
+    start = 0
+    try:
+        for _ in range(JSON_PAGE_LIMIT):
+            page = await method(start)
+            pages.append(page)
+            found_here = _json_devices(page)
+            total = page.get("sum") if isinstance(page, dict) else None
+            if len(found_here) < JSON_PAGE_SIZE:
+                break
+            start += JSON_PAGE_SIZE
+            if isinstance(total, int) and start >= total:
+                break
+    except Exception as err:
+        print(f"get_child_device_list_json() failed: {err}", file=sys.stderr)
+        if not pages:
+            return []
+
+    seen = set()
+    rows = []
+    for page in pages:
+        for device in _json_devices(page):
+            device_id = first_value(device, "device_id", "deviceId")
+            if device_id in seen:
+                continue
+            seen.add(device_id)
+            rows.append(device)
+
+    print(f"get_child_device_list_json(): {len(rows)} device(s) across {len(pages)} page(s)")
+    if not rows:
+        print("  (none)")
+        if pages and isinstance(pages[0], dict):
+            print(f"  page keys: {', '.join(str(key) for key in pages[0])}")
+        return []
+
+    cameras = []
+    for device in rows:
+        name = first_value(device, "alias", "nickname", "name")
+        model = first_value(device, "device_model", "model")
+        device_id = first_value(device, "device_id", "deviceId")
+        category = first_value(device, "category", "device_type", "type") or ""
+        extra = f"category={category}" if category else ""
+        print_device_line(name, model, device_id, extra)
+        if looks_like_camera(model, str(category)):
+            cameras.append(CameraRecord(display_name(name), model, device_id, True))
+    return cameras
+
+
+def cameras_for_recordings(general, children, raw_children) -> tuple[list[CameraRecord], str]:
+    """Pick the call that actually listed cameras.
+
+    The general list is the camera list, so it wins when it has entries. The
+    child calls are the fallback for a camera that only shows up as an untyped
+    child. When the raw JSON page lists more cameras than the typed child
+    list, the raw page is the one that contains them.
+    """
+    if general:
+        return general, "get_general_device_list()"
+    if raw_children and len(raw_children) > len(children):
+        return raw_children, "get_child_device_list_json()"
+    if children:
+        return children, "get_child_device_list()"
+    if raw_children:
+        return raw_children, "get_child_device_list_json()"
+    return [], ""
+
+
 def clip_line(recording) -> str:
     """One clip as start time, length, and the hub's recording type."""
     start = recording.start_time
@@ -210,17 +450,39 @@ async def main() -> None:
     firmware = info.get("fw_ver") or info.get("firmware_version") or "unknown firmware"
     print(f"Connected to {nickname} ({model}, {firmware}).")
 
+    # Two different lists. The general list is the cameras. The child list is
+    # sensors and switches; its raw JSON is the same list with nothing filtered
+    # out. Ask all of them, then query recordings from the one that has cameras.
+    print()
     try:
-        cameras = await hub.get_general_device_list()
+        general_devices = await hub.get_general_device_list()
     except Exception as err:
-        print(f"Connected, but listing paired cameras failed: {err}", file=sys.stderr)
-        raise SystemExit(1) from err
+        print(f"get_general_device_list() failed: {err}", file=sys.stderr)
+        general_devices = None
+    general_cameras = [] if general_devices is None else summarize_general_devices(general_devices)
 
+    print()
+    try:
+        child_devices = await hub.get_child_device_list()
+    except Exception as err:
+        print(f"get_child_device_list() failed: {err}", file=sys.stderr)
+        child_devices = None
+    child_cameras = [] if child_devices is None else summarize_child_devices(child_devices)
+
+    print()
+    raw_cameras = await summarize_child_device_json(hub)
+
+    if general_devices is None and child_devices is None and not raw_cameras:
+        print("Could not list devices from the hub.", file=sys.stderr)
+        raise SystemExit(1)
+
+    cameras, source = cameras_for_recordings(general_cameras, child_cameras, raw_cameras)
+    print()
     if not cameras:
-        print("No cameras are paired to this hub.")
+        print("No cameras were found in any list. Recordings were not queried.")
         return
 
-    print(f"Paired cameras: {len(cameras)}")
+    print(f"Using {source} for recordings ({len(cameras)} camera(s)).")
     for camera in cameras:
         await show_recordings(hub, camera)
 

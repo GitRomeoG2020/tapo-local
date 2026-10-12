@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<a class="back" href="/">All cameras</a>
+<h1>{{ recordings.device.name }}</h1>
+<p class="meta muted">
+  <span>Model {{ recordings.device.model }}</span>
+  ·
+  <span>Hub storage: {{ recordings.device.hub_storage }}</span>
+</p>
+
+<h2>Recording days</h2>
+<p class="muted">Days with recordings in the last {{ lookback_days }} days.</p>
+{% if recordings.days %}
+  <ul class="days">
+    {% for day in recordings.days %}
+      <li>{{ day.date }}</li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p>No recording days in this window.</p>
+{% endif %}
+
+<h2>Latest clips</h2>
+{% if recordings.clips %}
+  <p class="muted">
+    {% if recordings.clip_total > recordings.clips|length %}
+      Last {{ recordings.clips|length }} of {{ recordings.clip_total }} clips on {{ recordings.newest_day }}.
+    {% else %}
+      {{ recordings.clip_total }} clip{% if recordings.clip_total != 1 %}s{% endif %} on {{ recordings.newest_day }}.
+    {% endif %}
+  </p>
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Duration</th>
+          <th>Type</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for clip in recordings.clips %}
+          <tr>
+            <td>{{ clip.timestamp_label }}</td>
+            <td>{{ clip.duration_label }}</td>
+            <td>{{ clip.video_type }}</td>
+            <td>
+              <form method="post" action="/devices/{{ recordings.device.device_id }}/download">
+                <input type="hidden" name="start" value="{{ clip.start_value }}">
+                <input type="hidden" name="end" value="{{ clip.end_value }}">
+                <button type="submit">Download</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <p>No clips on the newest recording day.</p>
+{% endif %}
+{% endblock %}

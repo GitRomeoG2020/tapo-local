@@ -48,6 +48,23 @@ python scripts/h500_poc.py
 
 `tapo` 0.10 or newer is required for H500 recordings. A direct login uses AES. If the hub only accepts TPAP (Third-Party Compatibility off in the Tapo app), the script scans the subnet once and uses the hub it finds at that address. `tapo` 0.11 speaks TPAP to an H500 through discovery. A rejected password is not retried, because a locked hub refuses further logins for a while.
 
+## H500 dashboard
+
+`app/main.py` is a local page for the same hub. It lists paired cameras and doorbells with name, model, and hub storage. Open a device to see recording days from the last 7 days and the latest clips on the newest day. Each clip has a Download button that saves that recording as MPEG-TS.
+
+The camera list prefers `get_child_device_list_json()`. If that list has no cameras or doorbells, the page uses `get_general_device_list()`, then `get_child_device_list()`. Login and device filtering are the same helpers as `scripts/h500_poc.py`. Plugs, lights, and live view are not in this version. Add them as new routes that use the shared session in `app/hub.py`.
+
+The account is read from `TAPO_USERNAME` and `TAPO_PASSWORD`. Do not put those values in the code or in this repository.
+
+```powershell
+python -m pip install -r requirements.txt
+$env:TAPO_USERNAME = "you@example.com"
+$env:TAPO_PASSWORD = "your-tapo-password"
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+Open `http://127.0.0.1:8000` on this computer. The server listens on localhost only.
+
 ## Status
 
 - Project initialized from prior research chat

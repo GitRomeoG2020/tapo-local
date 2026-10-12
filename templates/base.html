@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · H500</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c2430;
+      --muted: #5c6778;
+      --line: #d8dee8;
+      --paper: #ffffff;
+      --page: #f3f5f8;
+      --accent: #0b57d0;
+      --bad: #8d1d1d;
+      --bad-bg: #fdecec;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: var(--page);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    header {
+      background: #1f2933;
+      color: white;
+      padding: 0.9rem 1.25rem;
+    }
+    header a { color: white; text-decoration: none; }
+    header p { margin: 0.2rem 0 0; color: #c5ced8; font-size: 0.92rem; }
+    main { max-width: 52rem; margin: 0 auto; padding: 1.25rem; }
+    h1 { font-size: 1.45rem; margin: 0 0 0.8rem; }
+    a { color: var(--accent); }
+    .muted { color: var(--muted); }
+    .error {
+      background: var(--bad-bg);
+      color: var(--bad);
+      border: 1px solid #f0c2c2;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
+    }
+    .card {
+      display: block;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 0.7rem;
+      text-decoration: none;
+      color: inherit;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card strong { display: block; font-size: 1.05rem; }
+    .meta { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.25rem; }
+    .scroll { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; }
+    table { width: 100%; border-collapse: collapse; min-width: 36rem; }
+    th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    th { font-size: 0.82rem; color: var(--muted); font-weight: 600; }
+    button {
+      font: inherit;
+      background: var(--accent);
+      color: white;
+      border: 0;
+      border-radius: 6px;
+      padding: 0.35rem 0.7rem;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.08); }
+    ul.days { padding-left: 1.2rem; }
+    .back { display: inline-block; margin-bottom: 0.8rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/"><strong>H500</strong></a>
+    <p>Local cameras and hub recordings</p>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
