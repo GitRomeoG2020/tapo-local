@@ -84,6 +84,8 @@ $hash
 
 The Live View page lists each name under `streams` and links to `http://<host>:1984/stream.html?src=<name>`. It also links to the full go2rtc UI on port 1984. Stream URL values stay in the yaml.
 
+Previews on the Cameras and Live View pages load after the list. Each one asks go2rtc for a small JPEG (`width=320`), waits up to 15 seconds, and tries once more. A Raspberry Pi often needs that extra time while a battery camera wakes and the frame is encoded. One preview is encoded at a time, so several images appear in turn. A preview that still does not arrive shows a placeholder, and the rest of the page stays up.
+
 Live View has a Sync cameras to go2rtc button. It uses the same hub camera list as the Cameras page and appends any camera whose device id is not already in `bin/go2rtc.yaml`. Existing stream lines are left as they are. Each new line looks like `tapo://admin:UPPERCASE_SHA256@<hub-ip>/?deviceId=<id>`. The hash is the uppercase SHA256 of `TAPO_PASSWORD`. After the page names what it added, restart go2rtc so the new streams load: `sudo systemctl restart go2rtc`. On Windows, stop `go2rtc.exe` and start it again.
 
 ## 4. Extra devices (optional)

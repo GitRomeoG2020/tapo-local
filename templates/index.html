@@ -3,7 +3,7 @@
 <h1>Paired cameras and doorbells</h1>
 {% if devices %}
   <p class="muted">Listed from {{ source }}.</p>
-  <p class="muted">Battery is the percentage reported with this list. Each preview loads on its own after the list is on screen. The hub library has no snapshot for an H500 camera, so a sleeping camera or a camera without a stream shows a placeholder.</p>
+  <p class="muted">Battery is the percentage reported with this list. Each preview loads on its own after the list is on screen. On a Raspberry Pi that frame can take longer. The hub library has no snapshot for an H500 camera, so a sleeping camera or a camera without a stream shows a placeholder.</p>
   <div class="cards camera-list">
     {% for device in devices %}
       <article class="card camera-card">

@@ -34,6 +34,8 @@ import asyncio
 import hashlib
 import os
 import re
+import threading
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -61,10 +63,19 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 GO2RTC_PORT = 1984
 GO2RTC_CONFIG = ROOT / "bin" / "go2rtc.yaml"
-# A sleeping battery camera can take a long time to wake. The cameras page
-# does not wait on this; the thumbnail request gives up and shows a placeholder.
-FRAME_TIMEOUT_S = 8
+# A sleeping battery camera, and a Pi encoding that frame, can take a while.
+# The cameras page does not wait on this. One thumbnail request gets 15
+# seconds and a single retry, then the card shows a placeholder.
+FRAME_TIMEOUT_S = 15
+FRAME_ATTEMPTS = 2
+FRAME_RETRY_PAUSE_S = 1
+# Cards are about 200px wide. go2rtc already turns an H264 frame into JPEG;
+# width=320 keeps that encode small. cache=1m reuses a snapshot it just made.
+FRAME_WIDTH = 320
+FRAME_CACHE = "1m"
 FRAME_MAX_BYTES = 2_000_000
+# One frame at a time. Several ffmpeg jobs at once are what drop previews on a Pi.
+_FRAME_LOCK = threading.Lock()
 _PLACEHOLDER_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180" viewBox="0 0 320 180" role="img" aria-label="No preview">
   <rect width="320" height="180" fill="#e2e8f0"/>
   <g fill="none" stroke="#64748b" stroke-width="2">
@@ -354,16 +365,18 @@ def stream_name_for_device(path: Path, device_id: str) -> str | None:
     return None
 
 
-def fetch_go2rtc_jpeg(stream_name: str) -> bytes | None:
-    """One JPEG from local go2rtc, or None when the frame is unavailable.
+def _frame_url(stream_name: str) -> str:
+    """Small cached JPEG. The stream name is the only value taken from the caller."""
+    src = quote(stream_name, safe="")
+    return (
+        f"http://127.0.0.1:{GO2RTC_PORT}/api/frame.jpeg"
+        f"?src={src}&width={FRAME_WIDTH}&cache={quote(FRAME_CACHE, safe='')}"
+    )
 
-    ``CameraHubHandler`` has no snapshot for a child camera. go2rtc already
-    holds the stream URL, so this asks it for ``/api/frame.jpeg``.
-    """
-    if not _STREAM_NAME.fullmatch(stream_name or ""):
-        return None
-    url = f"http://127.0.0.1:{GO2RTC_PORT}/api/frame.jpeg?src={quote(stream_name, safe='')}"
-    request = urllib.request.Request(url, headers={"Accept": "image/jpeg"})
+
+def _read_frame(stream_name: str) -> bytes | None:
+    """One attempt. None on timeout, a bad response, or a missing JPEG."""
+    request = urllib.request.Request(_frame_url(stream_name), headers={"Accept": "image/jpeg"})
     try:
         with _FRAME_OPENER.open(request, timeout=FRAME_TIMEOUT_S) as response:
             content_type = (response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
@@ -375,6 +388,25 @@ def fetch_go2rtc_jpeg(stream_name: str) -> bytes | None:
     if len(data) < 3 or len(data) > FRAME_MAX_BYTES or not data.startswith(b"\xff\xd8"):
         return None
     return data
+
+
+def fetch_go2rtc_jpeg(stream_name: str) -> bytes | None:
+    """One JPEG from local go2rtc, or None when both attempts fail.
+
+    ``CameraHubHandler`` has no snapshot for a child camera. go2rtc already
+    holds the stream URL, so this asks it for ``/api/frame.jpeg``. The page
+    that shows the camera list does not call this.
+    """
+    if not _STREAM_NAME.fullmatch(stream_name or ""):
+        return None
+    with _FRAME_LOCK:
+        for attempt in range(FRAME_ATTEMPTS):
+            frame = _read_frame(stream_name)
+            if frame is not None:
+                return frame
+            if attempt + 1 < FRAME_ATTEMPTS:
+                time.sleep(FRAME_RETRY_PAUSE_S)
+    return None
 
 
 def _thumbnail_bytes(device_id: str) -> bytes | None:
@@ -403,7 +435,7 @@ def _frame_response(frame: bytes | None) -> Response:
         content=frame,
         media_type="image/jpeg",
         headers={
-            "Cache-Control": "private, max-age=30",
+            "Cache-Control": "private, max-age=60",
             "X-Content-Type-Options": "nosniff",
         },
     )
