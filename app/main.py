@@ -14,8 +14,8 @@ Routes:
                                            clip counter for that zip
 
 Every page shares the top navigation. Live View reads stream names from
-``go2rtc.yaml`` and links each one to the go2rtc player on port 1984 of the
-same host. Stream URL values stay in that file. Plugs and lights can add
+``bin/go2rtc.yaml`` and links each one to the go2rtc player on port 1984 of
+the same host. Stream URL values stay in that file. Plugs and lights can add
 routes beside these. They should use ``app.hub.session`` so they share the
 hub login.
 """
@@ -43,7 +43,7 @@ ROOT = Path(__file__).resolve().parents[1]
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 GO2RTC_PORT = 1984
-GO2RTC_CONFIG = ROOT / "go2rtc.yaml"
+GO2RTC_CONFIG = ROOT / "bin" / "go2rtc.yaml"
 # go2rtc stream names are short tokens. Reject anything else before it is
 # placed in a link.
 _STREAM_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
