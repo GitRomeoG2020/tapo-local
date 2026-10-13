@@ -47,6 +47,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
@@ -100,6 +101,7 @@ _HOSTNAME = re.compile(
 )
 
 app = FastAPI(title="H500 dashboard")
+app.mount("/images", StaticFiles(directory=str(ROOT / "images")), name="images")
 # Wall clock when this process loaded the app. The Status page reports it.
 APP_STARTED_AT = time.time()
 

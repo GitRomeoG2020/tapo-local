@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
   <title>{{ title }} · H500</title>
   <style>
     :root {
@@ -29,6 +30,9 @@
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
       font-family: "Segoe UI", system-ui, sans-serif;
       background: var(--page);
       color: var(--ink);
@@ -62,7 +66,24 @@
     nav a:hover { background: var(--highlight); color: var(--navy); }
     nav a[aria-current="page"] { background: var(--blue); color: white; }
     nav a[aria-current="page"]:hover { background: var(--blue-hover); color: white; }
-    main { max-width: 68rem; margin: 0 auto; padding: 1.75rem 1.25rem 2.75rem; }
+    main { max-width: 68rem; margin: 0 auto; padding: 1.75rem 1.25rem 2.75rem; flex: 1 0 auto; width: 100%; }
+    .site-footer {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.65rem;
+      padding: 0.3rem 1rem;
+      border-top: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.2;
+    }
+    .site-footer img {
+      height: 30px;
+      width: auto;
+      display: block;
+    }
     h1 {
       font-size: 1.75rem;
       line-height: 1.2;
@@ -328,5 +349,9 @@
   <main>
     {% block content %}{% endblock %}
   </main>
+  <footer class="site-footer">
+    <img src="/images/G&amp;R-01.svg" alt="G&amp;R" height="30">
+    <span>Made in the USA by G&amp;R</span>
+  </footer>
 </body>
 </html>
