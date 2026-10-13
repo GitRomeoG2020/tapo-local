@@ -84,6 +84,16 @@
       width: auto;
       display: block;
     }
+    .site-footer a { color: var(--muted); font-weight: 600; text-decoration: none; }
+    .site-footer a:hover { color: var(--blue); }
+    .site-footer a[aria-current="page"] { color: var(--ink); }
+    .about-copy { max-width: 40rem; }
+    .about-copy p:last-child { margin-bottom: 0; }
+    .about-copy h2 { margin-top: 0.6rem; }
+    .about-brand { display: flex; align-items: center; gap: 1.15rem; margin-top: 0.35rem; }
+    .about-brand img { width: 120px; height: 120px; flex: 0 0 auto; }
+    .about-brand h2 { margin: 0 0 0.35rem; }
+    .about-brand p:last-child { margin-bottom: 0; }
     h1 {
       font-size: 1.75rem;
       line-height: 1.2;
@@ -328,6 +338,7 @@
       .camera-card { flex-direction: column; align-items: stretch; }
       .thumb-link, .thumb { width: 100%; flex-basis: auto; height: auto; }
       .thumb { aspect-ratio: 16 / 9; }
+      .about-brand { align-items: flex-start; }
     }
   </style>
 </head>
@@ -344,6 +355,7 @@
       <a href="/live/multi"{% if path == "/live/multi" %} aria-current="page"{% endif %}>Multi-view</a>
       <a href="/controls"{% if path == "/controls" %} aria-current="page"{% endif %}>Devices</a>
       <a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a>
+      <a href="/about"{% if path == "/about" %} aria-current="page"{% endif %}>About</a>
     </nav>
   </header>
   <main>
@@ -352,6 +364,7 @@
   <footer class="site-footer">
     <img src="/images/G&amp;R-01.svg" alt="G&amp;R" height="30">
     <span>Made in the USA by G&amp;R</span>
+    <a href="/about"{% if path == "/about" %} aria-current="page"{% endif %}>About</a>
   </footer>
 </body>
 </html>

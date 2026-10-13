@@ -13,6 +13,7 @@ Routes:
     GET  /controls                         plugs, lights, and other non-camera devices
     POST /controls/power                   on, off, or brightness
     GET  /status                           hub, go2rtc, ffmpeg, and uptime checks
+    GET  /about                            project description and credits
     GET  /devices/{device_id}              recording days and one day's clips
     GET  /devices/{device_id}/thumbnail    one go2rtc frame, or a placeholder image
     POST /devices/{device_id}/download     one clip as MPEG-TS
@@ -715,6 +716,12 @@ async def download_clip(
 @app.get("/devices/{device_id}/download-day/progress")
 async def download_day_progress(device_id: str, day: str) -> dict:
     return session.day_download_progress(device_id, day)
+
+
+@app.get("/about", response_class=HTMLResponse)
+async def about_page(request: Request) -> HTMLResponse:
+    """Project description. This does not call the hub or go2rtc."""
+    return render(request, "about.html", {"title": "About"})
 
 
 @app.get("/status", response_class=HTMLResponse)

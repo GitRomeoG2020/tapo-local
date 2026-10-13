@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>About</h1>
+<p class="muted">A local dashboard for a Tapo H500 and the devices around it.</p>
+<article class="card about-copy">
+  <p>This project is a local-first dashboard for TP-Link Tapo H500 hubs. It lists battery cameras and their hub recordings, opens live view through go2rtc, and controls other Tapo devices such as plugs and lights.</p>
+  <p>The account and hub address stay on your machine. The dashboard talks to the hub on your LAN. It does not send those recordings to a cloud service of its own.</p>
+  <p>This is an unofficial project. It is not affiliated with TP-Link. A firmware update can change how the hub answers, so treat the local behavior as something that may need a code update later.</p>
+  <div class="about-brand">
+    <img src="/images/logo.svg" alt="G&amp;R" width="120" height="120">
+    <div>
+      <h2>G&amp;R</h2>
+      <p>Built by Romeo with substantial assistance from Grok (xAI).</p>
+      <p>Made in the USA by G&amp;R. The logo is the mark of that partnership.</p>
+    </div>
+  </div>
+</article>
+{% endblock %}
