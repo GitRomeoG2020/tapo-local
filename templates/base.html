@@ -180,6 +180,9 @@
     }
     .status.off { background: var(--offline-bg); color: var(--offline); }
     .status.off::before { background: var(--offline-dot); }
+    .status.bad { background: var(--bad-bg); color: var(--bad); }
+    .status.bad::before { background: var(--bad); }
+    .check-detail { margin: 0; }
     .scroll {
       overflow-x: auto;
       background: var(--paper);
@@ -282,6 +285,7 @@
       <a href="/"{% if path == "/" or path.startswith("/devices") %} aria-current="page"{% endif %}>Cameras &amp; Recordings</a>
       <a href="/live"{% if path == "/live" %} aria-current="page"{% endif %}>Live View</a>
       <a href="/controls"{% if path == "/controls" %} aria-current="page"{% endif %}>Devices</a>
+      <a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a>
     </nav>
   </header>
   <main>

@@ -11,6 +11,7 @@ Routes:
     POST /live/sync                        add missing cameras to bin/go2rtc.yaml
     GET  /controls                         plugs, lights, and other non-camera devices
     POST /controls/power                   on, off, or brightness
+    GET  /status                           hub, go2rtc, ffmpeg, and uptime checks
     GET  /devices/{device_id}              recording days and one day's clips
     GET  /devices/{device_id}/thumbnail    one go2rtc frame, or a placeholder image
     POST /devices/{device_id}/download     one clip as MPEG-TS
@@ -49,6 +50,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
 from app.controls import ControlError, session as control_session
+from app.status import build_status_checks
 from app.hub import (
     BadRequest,
     HubError,
@@ -97,6 +99,8 @@ _HOSTNAME = re.compile(
 )
 
 app = FastAPI(title="H500 dashboard")
+# Wall clock when this process loaded the app. The Status page reports it.
+APP_STARTED_AT = time.time()
 
 # stderr, not the uvicorn logger tree, so INFO lines show up under systemd too.
 _preview_log = logging.getLogger("tapo.preview")
@@ -675,6 +679,13 @@ async def download_clip(
 @app.get("/devices/{device_id}/download-day/progress")
 async def download_day_progress(device_id: str, day: str) -> dict:
     return session.day_download_progress(device_id, day)
+
+
+@app.get("/status", response_class=HTMLResponse)
+async def status_page(request: Request) -> HTMLResponse:
+    """Local health checks. This does not list cameras or open a hub login."""
+    checks = await build_status_checks(APP_STARTED_AT)
+    return render(request, "status.html", {"title": "Status", "checks": checks})
 
 
 @app.get("/controls", response_class=HTMLResponse)

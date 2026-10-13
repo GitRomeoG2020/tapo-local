@@ -526,6 +526,12 @@ class HubSession:
         self._hub = None
         self._lock = None
         self._day_progress: DayDownloadProgress | None = None
+        self._camera_count: int | None = None
+
+    @property
+    def camera_count(self) -> int | None:
+        """Cameras in the last successful hub list, or None before that list runs."""
+        return self._camera_count
 
     def _set_day_progress(
         self,
@@ -683,7 +689,9 @@ class HubSession:
             child_cameras = cameras_from_children(children, storage_by_id, battery_by_id)
             return choose_cameras(json_cameras, general_cameras, child_cameras)
 
-        return await self.call(operation)
+        cameras, source = await self.call(operation)
+        self._camera_count = len(cameras)
+        return cameras, source
 
     async def get_device(self, device_id: str) -> tuple[Device, str]:
         device_id = _require_device_id(device_id)

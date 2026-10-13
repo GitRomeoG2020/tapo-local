@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Status</h1>
+<p class="muted">These checks finish quickly. They do not list recordings or request camera previews.</p>
+<div class="cards">
+  {% for check in checks %}
+    <article class="card">
+      <div class="card-top">
+        <strong>{{ check.name }}</strong>
+        <span class="status{% if check.state == 'bad' %} bad{% elif check.state == 'off' %} off{% endif %}">{{ check.value }}</span>
+      </div>
+      {% if check.detail %}
+        <p class="muted check-detail">{{ check.detail }}</p>
+      {% endif %}
+    </article>
+  {% endfor %}
+</div>
+{% endblock %}
