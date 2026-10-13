@@ -7,6 +7,7 @@ Run from the project root:
 Routes:
     GET  /                                 paired cameras and doorbells
     GET  /live                             links to go2rtc live streams
+    GET  /live/multi                       tiled go2rtc players for every stream
     GET  /live/thumbnail/{stream_name}     one go2rtc frame, or a placeholder image
     POST /live/sync                        add missing cameras to bin/go2rtc.yaml
     GET  /controls                         plugs, lights, and other non-camera devices
@@ -520,6 +521,26 @@ def live_streams(hostname: str | None, cameras=()) -> tuple[str, list[dict[str, 
     return f"{origin}/", streams
 
 
+def multi_view_streams(hostname: str | None) -> list[dict[str, str]]:
+    """One go2rtc player per configured stream. URL values stay in the yaml.
+
+    Each player is go2rtc's own ``stream.html`` page, which selects WebRTC
+    and then MSE. A camera that is offline fails inside that frame.
+    """
+    origin = go2rtc_origin(hostname)
+    streams = []
+    for name, _device_id in stream_device_ids(GO2RTC_CONFIG):
+        src = quote(name, safe="")
+        streams.append(
+            {
+                "name": name,
+                "label": stream_label(name),
+                "player": f"{origin}/stream.html?src={src}&mode=webrtc,mse",
+            }
+        )
+    return streams
+
+
 def render(request: Request, name: str, context: dict, status_code: int = 200) -> HTMLResponse:
     payload = {"request": request, **context}
     return templates.TemplateResponse(request, name, payload, status_code=status_code)
@@ -589,6 +610,19 @@ async def sync_live_cameras(request: Request) -> HTMLResponse:
         )
     synced = "none" if not added else ",".join(added)
     return RedirectResponse(f"/live?synced={quote(synced, safe=',')}", status_code=303)
+
+
+@app.get("/live/multi", response_class=HTMLResponse)
+async def live_multi(request: Request) -> HTMLResponse:
+    """Tiled live players. This does not call the hub or request previews."""
+    return render(
+        request,
+        "multiview.html",
+        {
+            "title": "Multi-view",
+            "streams": multi_view_streams(request.url.hostname),
+        },
+    )
 
 
 @app.get("/live/thumbnail/{stream_name}")

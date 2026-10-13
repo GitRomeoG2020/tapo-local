@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Multi-view</h1>
+<p class="muted">Every stream configured in go2rtc plays here on port 1984. A camera that is asleep or offline shows an error in its own tile. The other tiles keep playing.</p>
+<p class="page-actions"><a class="button-link secondary" href="/live">Live View</a></p>
+{% if streams %}
+  <div class="multiview">
+    {% for stream in streams %}
+      <article class="card multiview-tile">
+        <strong>{{ stream.label }}</strong>
+        <div class="multiview-frame">
+          <iframe
+            src="{{ stream.player }}"
+            title="Live view of {{ stream.label }}"
+            allow="autoplay; fullscreen"
+            allowfullscreen
+          ></iframe>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+{% else %}
+  <p class="empty">No streams are configured in go2rtc.</p>
+{% endif %}
+{% endblock %}

@@ -246,6 +246,35 @@
     }
     .back { display: inline-block; margin-bottom: 0.85rem; font-weight: 600; text-decoration: none; }
     .page-actions { margin-top: 0.25rem; }
+    a.button-link.secondary {
+      background: var(--paper);
+      color: var(--ink);
+      border-color: var(--line);
+    }
+    a.button-link.secondary:hover { background: var(--highlight); border-color: #bfdbfe; color: var(--navy); }
+    main:has(.multiview) { max-width: 100rem; }
+    .multiview {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 0.85rem;
+      margin: 0.35rem 0 1.25rem;
+    }
+    .multiview-tile { gap: 0.55rem; }
+    .multiview-frame {
+      position: relative;
+      background: var(--navy);
+      border-radius: 8px;
+      overflow: hidden;
+      aspect-ratio: 16 / 9;
+    }
+    .multiview-frame iframe {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: var(--navy);
+    }
     .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
     .controls label { color: var(--muted); font-size: 0.92rem; display: inline-flex; gap: 0.4rem; align-items: center; }
     .controls input[type="number"] {
@@ -261,6 +290,13 @@
     @media (min-width: 700px) {
       .cards { grid-template-columns: 1fr 1fr; }
       .cards.camera-list { grid-template-columns: 1fr; }
+      .multiview { grid-template-columns: 1fr 1fr; }
+    }
+    @media (min-width: 1100px) {
+      .multiview { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    @media (min-width: 1500px) {
+      .multiview { grid-template-columns: 1fr 1fr 1fr 1fr; }
     }
     @media (max-width: 640px) {
       header { padding: 0.85rem 1rem; }
@@ -284,6 +320,7 @@
     <nav aria-label="Primary">
       <a href="/"{% if path == "/" or path.startswith("/devices") %} aria-current="page"{% endif %}>Cameras &amp; Recordings</a>
       <a href="/live"{% if path == "/live" %} aria-current="page"{% endif %}>Live View</a>
+      <a href="/live/multi"{% if path == "/live/multi" %} aria-current="page"{% endif %}>Multi-view</a>
       <a href="/controls"{% if path == "/controls" %} aria-current="page"{% endif %}>Devices</a>
       <a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a>
     </nav>
