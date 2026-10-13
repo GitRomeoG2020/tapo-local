@@ -198,23 +198,63 @@ Windows: stop `go2rtc.exe` and start it again.
 
 ## 5. Extra devices (optional)
 
-Plugs and lights on another subnet or VLAN go in `extra_devices.yaml` in the project root. The file is optional and is not committed. When it is missing, or it only has comments, the Devices page stays on the subnet scan.
+Plugs and lights on another subnet or VLAN go in `extra_devices.yaml` in the project root. When that file is missing, or it only has comments, the Devices page stays on the subnet scan.
 
-Copy `devices.yaml.example` and edit the addresses.
+`extra_devices.yaml` is git-ignored. Create it by hand on each machine, including this PC and the Raspberry Pi. `git pull` does not download it.
 
-Linux or Raspberry Pi:
+The file looks like this. `model` is optional (`L530`, `P110`, and similar).
+
+```yaml
+extra_devices:
+  - ip: 192.168.x.x
+    name: Living Room Lamp
+```
+
+The page logs in with `TAPO_USERNAME` and `TAPO_PASSWORD`, and shows the name, model, and on/off control. Brightness is shown when the device reports it. An address that does not respond is shown as offline.
+
+### Linux or Raspberry Pi
+
+Create `extra_devices.yaml` in the project directory. It is git-ignored, so a later `git pull` will not replace it or add it to a new clone.
+
+```yaml
+extra_devices:
+  - ip: 192.168.x.x
+    name: Living Room Lamp
+```
+
+This repository includes `devices.yaml.example`. Copy that file and edit the addresses:
 
 ```bash
 cp devices.yaml.example extra_devices.yaml
 ```
 
-Windows:
+`extra_devices.yaml.example` may also be present. When it is, you can copy that instead:
+
+```bash
+cp extra_devices.yaml.example extra_devices.yaml
+```
+
+### Windows
+
+Create `extra_devices.yaml` in the project directory. It is git-ignored, so a later `git pull` will not replace it or add it to a new clone.
+
+```yaml
+extra_devices:
+  - ip: 192.168.x.x
+    name: Living Room Lamp
+```
+
+This repository includes `devices.yaml.example`. Copy that file and edit the addresses:
 
 ```powershell
 Copy-Item devices.yaml.example extra_devices.yaml
 ```
 
-`model` is optional (`L530`, `P110`, and similar). The page logs in with `TAPO_USERNAME` and `TAPO_PASSWORD`, and shows the name, model, and on/off control. Brightness is shown when the device reports it. An address that does not respond is shown as offline.
+`extra_devices.yaml.example` may also be present. When it is, you can copy that instead:
+
+```powershell
+Copy-Item extra_devices.yaml.example extra_devices.yaml
+```
 
 `devices.txt` is separate. One IPv4 address per line. A broadcast address such as `192.168.1.255` scans that subnet. When that file is missing or only has comments, the page scans the subnet of `TAPO_HUB_IP`. When any address is listed, only those addresses are checked. Entries in `extra_devices.yaml` are added on top of that scan.
 
