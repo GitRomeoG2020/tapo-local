@@ -11,7 +11,7 @@ Routes:
     GET  /live/thumbnail/{stream_name}     one go2rtc frame, or a placeholder image
     POST /live/sync                        add missing cameras to bin/go2rtc.yaml
     GET  /controls                         plugs, lights, and other non-camera devices
-    POST /controls/power                   on, off, or brightness
+    POST /controls/power                   on, off, brightness, color, or color temperature
     GET  /status                           hub, go2rtc, ffmpeg, and uptime checks
     GET  /about                            project description and credits
     GET  /devices/{device_id}              recording days and one day's clips
@@ -52,7 +52,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.background import BackgroundTask
 
-from app.controls import ControlError, session as control_session
+from app.controls import ControlError, device_cards, session as control_session
 from app.status import build_status_checks
 from app.hub import (
     BadRequest,
@@ -731,19 +731,22 @@ async def status_page(request: Request) -> HTMLResponse:
     return render(request, "status.html", {"title": "Status", "checks": checks})
 
 
+def _controls_page(listing, error: str = "", error_ip: str = "", notice: str = "") -> dict:
+    return {
+        "title": "Devices",
+        "devices": device_cards(listing.devices),
+        "source": listing.source,
+        "error": error or listing.error,
+        "error_ip": error_ip,
+        "notice": notice,
+    }
+
+
 @app.get("/controls", response_class=HTMLResponse)
 async def controls_page(request: Request, refresh: bool = False) -> HTMLResponse:
     listing = await control_session.list_devices(refresh=refresh)
-    return render(
-        request,
-        "controls.html",
-        {
-            "title": "Devices",
-            "devices": listing.devices,
-            "source": listing.source,
-            "error": listing.error,
-        },
-    )
+    notice = "Updated." if request.query_params.get("updated") == "1" else ""
+    return render(request, "controls.html", _controls_page(listing, notice=notice))
 
 
 @app.post("/controls/power")
@@ -753,23 +756,31 @@ async def control_power(
     action: str = Form(...),
     child_id: str = Form(""),
     brightness: str = Form(""),
+    hue: str = Form(""),
+    saturation: str = Form(""),
+    color_temp: str = Form(""),
+    preset: str = Form(""),
 ):
     try:
-        await control_session.set_power(ip, child_id, action, brightness)
+        await control_session.set_power(
+            ip,
+            child_id,
+            action,
+            brightness,
+            hue,
+            saturation,
+            color_temp,
+            preset,
+        )
     except ControlError as err:
         listing = await control_session.list_devices()
         return render(
             request,
             "controls.html",
-            {
-                "title": "Devices",
-                "devices": listing.devices,
-                "source": listing.source,
-                "error": str(err),
-            },
+            _controls_page(listing, error=str(err), error_ip=ip.strip()),
             status_code=400,
         )
-    return RedirectResponse("/controls", status_code=303)
+    return RedirectResponse("/controls?updated=1", status_code=303)
 
 
 @app.post("/devices/{device_id}/download-day")

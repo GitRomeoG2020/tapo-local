@@ -4,13 +4,16 @@
 {% if source %}
   <p class="muted">{{ source }} <a href="/controls?refresh=1">Refresh</a></p>
 {% endif %}
+{% if notice %}
+  <p class="notice">{{ notice }}</p>
+{% endif %}
 {% if error %}
   <p class="error">{{ error }}</p>
 {% endif %}
 {% if devices %}
   <div class="cards">
     {% for device in devices %}
-      <div class="card">
+      <div class="card{% if error and error_ip == device.ip %} failed{% endif %}">
         <div class="card-top">
           <strong>{{ device.name }}</strong>
           <span class="status{% if not device.online %} off{% endif %}">{{ device.status }}</span>
@@ -18,26 +21,104 @@
         <div class="meta">
           <span>Model {{ device.model }}</span>
           <span>{{ device.ip }}</span>
-          {% if device.brightness is not none %}
-            <span>Brightness {{ device.brightness }}%</span>
+          {% if device.outlets %}
+            <span>{{ device.outlets|length }} outlets</span>
+          {% elif device.can_dim %}
+            <span>Brightness {{ device.brightness_input }}%</span>
+          {% endif %}
+          {% if device.color_temp is not none %}
+            <span>{{ device.color_temp }} K</span>
           {% endif %}
         </div>
-        {% if device.can_switch or device.can_dim %}
-          <form class="controls" method="post" action="/controls/power">
-            <input type="hidden" name="ip" value="{{ device.ip }}">
-            <input type="hidden" name="child_id" value="{{ device.child_id }}">
-            {% if device.can_switch %}
+        {% if error and error_ip == device.ip %}
+          <p class="error">This change did not apply.</p>
+        {% endif %}
+        {% if device.outlets %}
+          <div class="outlets">
+            {% for outlet in device.outlets %}
+              <div class="outlet">
+                <span>{{ outlet.name }}</span>
+                <span class="status{% if not outlet.online %} off{% endif %}">{{ outlet.status }}</span>
+                {% if outlet.can_switch %}
+                  <form class="controls" method="post" action="/controls/power">
+                    <input type="hidden" name="ip" value="{{ device.ip }}">
+                    <input type="hidden" name="child_id" value="{{ outlet.child_id }}">
+                    <button type="submit" name="action" value="on">On</button>
+                    <button class="secondary" type="submit" name="action" value="off">Off</button>
+                  </form>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        {% elif device.can_switch or device.can_dim or device.can_color or device.can_temperature or device.can_preset %}
+          {% if device.can_switch %}
+            <form class="controls" method="post" action="/controls/power">
+              <input type="hidden" name="ip" value="{{ device.ip }}">
+              <input type="hidden" name="child_id" value="{{ device.child_id }}">
               <button type="submit" name="action" value="on">On</button>
               <button class="secondary" type="submit" name="action" value="off">Off</button>
-            {% endif %}
-            {% if device.can_dim %}
+            </form>
+          {% endif %}
+          {% if device.can_dim %}
+            <form class="controls dimmer" method="post" action="/controls/power">
+              <input type="hidden" name="ip" value="{{ device.ip }}">
+              <input type="hidden" name="child_id" value="{{ device.child_id }}">
+              <input type="hidden" name="action" value="brightness">
               <label>
                 Brightness
-                <input type="number" name="brightness" min="1" max="100" value="{{ device.brightness_input }}">
+                <input type="range" name="brightness" min="0" max="100" value="{{ device.brightness_input }}" data-suffix="%" aria-valuemin="0" aria-valuemax="100">
+                <output>{{ device.brightness_input }}%</output>
               </label>
-              <button type="submit" name="action" value="brightness">Set brightness</button>
-            {% endif %}
-          </form>
+            </form>
+          {% endif %}
+          {% if device.can_temperature %}
+            <form class="controls" method="post" action="/controls/power">
+              <input type="hidden" name="ip" value="{{ device.ip }}">
+              <input type="hidden" name="child_id" value="{{ device.child_id }}">
+              <input type="hidden" name="action" value="temperature">
+              <label>
+                Color temperature
+                <input type="range" name="color_temp" min="2500" max="6500" step="50" value="{{ device.color_temp_input }}" data-suffix=" K" aria-valuemin="2500" aria-valuemax="6500">
+                <output>{{ device.color_temp_input }} K</output>
+              </label>
+            </form>
+          {% endif %}
+          {% if device.can_color %}
+            <form class="controls" method="post" action="/controls/power">
+              <input type="hidden" name="ip" value="{{ device.ip }}">
+              <input type="hidden" name="child_id" value="{{ device.child_id }}">
+              <input type="hidden" name="action" value="color">
+              <label>
+                Hue
+                <input type="range" name="hue" min="0" max="360" value="{{ device.hue_input }}" data-suffix="°" aria-valuemin="0" aria-valuemax="360">
+                <output>{{ device.hue_input }}°</output>
+              </label>
+              <label>
+                Saturation
+                <input type="range" name="saturation" min="1" max="100" value="{{ device.saturation_input }}" data-suffix="%" aria-valuemin="1" aria-valuemax="100">
+                <output>{{ device.saturation_input }}%</output>
+              </label>
+            </form>
+          {% endif %}
+          {% if device.can_preset %}
+            <form class="controls" method="post" action="/controls/power">
+              <input type="hidden" name="ip" value="{{ device.ip }}">
+              <input type="hidden" name="child_id" value="{{ device.child_id }}">
+              <input type="hidden" name="action" value="preset">
+              <label>
+                Preset
+                <select name="preset">
+                  <option value="">Choose a color</option>
+                  {% for preset in device.presets %}
+                    <option value="{{ preset.id }}">{{ preset.label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </form>
+          {% endif %}
+        {% endif %}
+        {% if device.note %}
+          <p class="muted">{{ device.note }}</p>
         {% endif %}
       </div>
     {% endfor %}
@@ -45,4 +126,39 @@
 {% elif not error %}
   <p class="empty">No plugs or lights were found on this scan.</p>
 {% endif %}
+<script>
+  document.querySelectorAll("form.controls").forEach(function (form) {
+    form.querySelectorAll('input[type="range"]').forEach(function (range) {
+      var output = range.parentElement.querySelector("output");
+      var suffix = range.getAttribute("data-suffix");
+      if (suffix === null) suffix = "%";
+      if (output) {
+        range.addEventListener("input", function () {
+          output.textContent = range.value + suffix;
+        });
+      }
+      range.addEventListener("change", function () {
+        form.requestSubmit();
+      });
+    });
+    var preset = form.querySelector('select[name="preset"]');
+    if (preset) {
+      preset.addEventListener("change", function () {
+        if (preset.value) form.requestSubmit();
+      });
+    }
+    form.addEventListener("submit", function () {
+      form.setAttribute("aria-busy", "true");
+      var note = document.createElement("span");
+      note.className = "pending";
+      note.textContent = "Updating…";
+      form.appendChild(note);
+      window.setTimeout(function () {
+        form.querySelectorAll("button").forEach(function (button) {
+          button.disabled = true;
+        });
+      }, 0);
+    });
+  });
+</script>
 {% endblock %}

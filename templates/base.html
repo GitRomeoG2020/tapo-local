@@ -308,16 +308,29 @@
     }
     .controls { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.35rem; }
     .controls label { color: var(--muted); font-size: 0.92rem; display: inline-flex; gap: 0.4rem; align-items: center; }
-    .controls input[type="number"] {
+    .controls input[type="range"] {
+      width: 9rem;
+      accent-color: var(--blue);
+    }
+    .controls output { min-width: 2.5rem; color: var(--ink); font-weight: 600; }
+    .controls select {
       font: inherit;
-      width: 4.75rem;
-      min-height: 2.5rem;
-      padding: 0.35rem 0.5rem;
+      color: var(--ink);
+      background: var(--paper);
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: var(--paper);
-      color: var(--ink);
+      padding: 0.35rem 0.5rem;
     }
+    .pending { color: var(--muted); font-size: 0.92rem; }
+    .card.failed { border-color: var(--bad-line); }
+    .outlets { display: flex; flex-direction: column; gap: 0.65rem; }
+    .outlet {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem 0.7rem;
+    }
+    .outlet .controls { margin-top: 0; }
     @media (min-width: 700px) {
       .cards { grid-template-columns: 1fr 1fr; }
       .cards.camera-list { grid-template-columns: 1fr; }
