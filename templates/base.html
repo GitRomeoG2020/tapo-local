@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
   <title>{{ title }} · H500</title>
+  <script>
+    try {
+      if (localStorage.getItem("h500-theme") === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    } catch (err) {}
+  </script>
   <style>
     :root {
       color-scheme: light;
@@ -14,9 +21,19 @@
       --paper: #ffffff;
       --page: #f8fafc;
       --navy: #0f172a;
+      --header: #0f172a;
+      --header-muted: #94a3b8;
+      --nav: #e2e8f0;
+      --hover-ink: #0f172a;
       --blue: #1d4ed8;
       --blue-hover: #1e40af;
+      --link: #1d4ed8;
+      --link-hover: #1e40af;
       --highlight: #dbeafe;
+      --hover-bg: #f8fbff;
+      --hover-line: #bfdbfe;
+      --thumb: #e2e8f0;
+      --shadow: rgba(15, 23, 42, 0.04);
       --online: #166534;
       --online-bg: #dcfce7;
       --online-dot: #16a34a;
@@ -26,6 +43,37 @@
       --bad: #991b1b;
       --bad-bg: #fef2f2;
       --bad-line: #fecaca;
+    }
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --ink: #e2e8f0;
+      --muted: #94a3b8;
+      --line: #334155;
+      --paper: #1e293b;
+      --page: #0f172a;
+      --navy: #020617;
+      --header: #020617;
+      --header-muted: #94a3b8;
+      --nav: #e2e8f0;
+      --hover-ink: #f8fafc;
+      --blue: #1d4ed8;
+      --blue-hover: #2563eb;
+      --link: #93c5fd;
+      --link-hover: #bfdbfe;
+      --highlight: #1e3a5f;
+      --hover-bg: #243044;
+      --hover-line: #3b82f6;
+      --thumb: #334155;
+      --shadow: rgba(0, 0, 0, 0.28);
+      --online: #86efac;
+      --online-bg: #14532d;
+      --online-dot: #4ade80;
+      --offline: #cbd5e1;
+      --offline-bg: #334155;
+      --offline-dot: #94a3b8;
+      --bad: #fecaca;
+      --bad-bg: #450a0a;
+      --bad-line: #7f1d1d;
     }
     * { box-sizing: border-box; }
     body {
@@ -40,7 +88,7 @@
       font-size: 1rem;
     }
     header {
-      background: var(--navy);
+      background: var(--header);
       color: white;
       padding: 0.9rem 1.5rem;
       display: flex;
@@ -53,17 +101,17 @@
       z-index: 10;
     }
     .brand a { color: white; text-decoration: none; font-size: 1.15rem; letter-spacing: -0.02em; }
-    header p { margin: 0.15rem 0 0; color: #94a3b8; font-size: 0.9rem; }
-    nav { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    header p { margin: 0.15rem 0 0; color: var(--header-muted); font-size: 0.9rem; }
+    nav { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
     nav a {
-      color: #e2e8f0;
+      color: var(--nav);
       text-decoration: none;
       padding: 0.45rem 0.85rem;
       border-radius: 999px;
       font-weight: 600;
       font-size: 0.95rem;
     }
-    nav a:hover { background: var(--highlight); color: var(--navy); }
+    nav a:hover { background: var(--highlight); color: var(--hover-ink); }
     nav a[aria-current="page"] { background: var(--blue); color: white; }
     nav a[aria-current="page"]:hover { background: var(--blue-hover); color: white; }
     main { max-width: 68rem; margin: 0 auto; padding: 1.75rem 1.25rem 2.75rem; flex: 1 0 auto; width: 100%; }
@@ -85,7 +133,11 @@
       display: block;
     }
     .site-footer a { color: var(--muted); font-weight: 600; text-decoration: none; }
-    .site-footer a:hover { color: var(--blue); }
+    .site-footer a:hover { color: var(--link); }
+    html[data-theme="dark"] .about-brand img {
+      background: #f8fafc;
+      border-radius: 16px;
+    }
     .site-footer a[aria-current="page"] { color: var(--ink); }
     .about-copy { max-width: 40rem; }
     .about-copy p:last-child { margin-bottom: 0; }
@@ -103,8 +155,8 @@
     }
     h2 { font-size: 1.15rem; margin: 1.6rem 0 0.35rem; letter-spacing: -0.02em; }
     p { margin: 0.35rem 0 1rem; }
-    a { color: var(--blue); }
-    a:hover { color: var(--blue-hover); }
+    a { color: var(--link); }
+    a:hover { color: var(--link-hover); }
     :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
     .muted { color: var(--muted); }
     code {
@@ -144,11 +196,11 @@
       padding: 1rem 1.1rem;
       text-decoration: none;
       color: inherit;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      box-shadow: 0 1px 2px var(--shadow);
     }
     a.card:hover {
-      border-color: #bfdbfe;
-      background: #f8fbff;
+      border-color: var(--hover-line);
+      background: var(--hover-bg);
       box-shadow: 0 0 0 3px var(--highlight);
     }
     .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; flex-wrap: wrap; }
@@ -159,7 +211,7 @@
       padding: 0.75rem;
     }
     .camera-card:hover {
-      border-color: #bfdbfe;
+      border-color: var(--hover-line);
       box-shadow: 0 0 0 3px var(--highlight);
     }
     .thumb-link {
@@ -167,7 +219,7 @@
       display: block;
       border-radius: 8px;
       overflow: hidden;
-      background: #e2e8f0;
+      background: var(--thumb);
       line-height: 0;
     }
     .thumb {
@@ -175,9 +227,9 @@
       width: 12.5rem;
       height: 7rem;
       object-fit: cover;
-      background: #e2e8f0;
+      background: var(--thumb);
     }
-    .thumb-missing { background: #e2e8f0; }
+    .thumb-missing { background: var(--thumb); }
     .camera-card .card-body {
       display: flex;
       flex-direction: column;
@@ -219,7 +271,7 @@
       background: var(--paper);
       border: 1px solid var(--line);
       border-radius: 12px;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      box-shadow: 0 1px 2px var(--shadow);
     }
     table { width: 100%; border-collapse: collapse; min-width: 36rem; }
     th, td { text-align: left; padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -248,7 +300,28 @@
       color: var(--ink);
       border-color: var(--line);
     }
-    button.secondary:hover { background: var(--highlight); border-color: #bfdbfe; color: var(--navy); }
+    button.secondary:hover { background: var(--highlight); border-color: var(--hover-line); color: var(--hover-ink); }
+    button.theme-toggle {
+      gap: 0.35rem;
+      margin-left: 0.15rem;
+      min-height: 2.15rem;
+      padding: 0.35rem 0.7rem;
+      border-radius: 999px;
+      border: 1px solid #334155;
+      background: transparent;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+      flex: 0 0 auto;
+    }
+    button.theme-toggle:hover {
+      background: #1e293b;
+      border-color: #64748b;
+      color: white;
+    }
+    .theme-icon { display: block; flex: 0 0 auto; }
+    .theme-icon-sun { display: none; }
+    html[data-theme="dark"] .theme-icon-moon { display: none; }
+    html[data-theme="dark"] .theme-icon-sun { display: block; }
     button:disabled { opacity: 0.7; cursor: progress; }
     ul.days { list-style: none; display: flex; flex-wrap: wrap; gap: 0.45rem; padding: 0; margin: 0.5rem 0 0.25rem; }
     ul.days a {
@@ -263,14 +336,14 @@
       text-decoration: none;
       font-weight: 600;
     }
-    ul.days a:hover { background: var(--highlight); border-color: #bfdbfe; color: var(--navy); }
+    ul.days a:hover { background: var(--highlight); border-color: var(--hover-line); color: var(--hover-ink); }
     ul.days a[aria-current="page"] { background: var(--blue); border-color: var(--blue); color: white; }
     ul.days a[aria-current="page"]:hover { background: var(--blue-hover); color: white; }
     .day-actions { margin: 0.75rem 0 0.75rem; }
     .notice {
       background: var(--highlight);
       color: var(--ink);
-      border: 1px solid #bfdbfe;
+      border: 1px solid var(--hover-line);
       border-radius: 12px;
       padding: 0.85rem 1rem;
       margin: 0.2rem 0 1rem;
@@ -282,7 +355,7 @@
       color: var(--ink);
       border-color: var(--line);
     }
-    a.button-link.secondary:hover { background: var(--highlight); border-color: #bfdbfe; color: var(--navy); }
+    a.button-link.secondary:hover { background: var(--highlight); border-color: var(--hover-line); color: var(--hover-ink); }
     main:has(.multiview) { max-width: 100rem; }
     .multiview {
       display: grid;
@@ -369,6 +442,16 @@
       <a href="/controls"{% if path == "/controls" %} aria-current="page"{% endif %}>Devices</a>
       <a href="/status"{% if path == "/status" %} aria-current="page"{% endif %}>Status</a>
       <a href="/about"{% if path == "/about" %} aria-current="page"{% endif %}>About</a>
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" aria-label="Switch to dark theme">
+        <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path fill="currentColor" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <circle cx="12" cy="12" r="3.5" fill="currentColor"/>
+          <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M12 2.5v2.2M12 19.3v2.2M4.8 4.8l1.6 1.6M17.6 17.6l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.8 19.2l1.6-1.6M17.6 6.4l1.6-1.6"/>
+        </svg>
+        <span class="theme-label">Dark</span>
+      </button>
     </nav>
   </header>
   <main>
@@ -379,5 +462,31 @@
     <span>Made in the USA by G&amp;R</span>
     <a href="/about"{% if path == "/about" %} aria-current="page"{% endif %}>About</a>
   </footer>
+  <script>
+    (function () {
+      var key = "h500-theme";
+      var root = document.documentElement;
+      var button = document.getElementById("theme-toggle");
+      var label = button.querySelector(".theme-label");
+
+      function sync() {
+        var dark = root.getAttribute("data-theme") === "dark";
+        button.setAttribute("aria-pressed", dark ? "true" : "false");
+        button.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+        label.textContent = dark ? "Light" : "Dark";
+      }
+
+      button.addEventListener("click", function () {
+        var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        if (next === "dark") root.setAttribute("data-theme", "dark");
+        else root.removeAttribute("data-theme");
+        try {
+          localStorage.setItem(key, next);
+        } catch (err) {}
+        sync();
+      });
+      sync();
+    })();
+  </script>
 </body>
 </html>
