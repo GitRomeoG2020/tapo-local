@@ -6,6 +6,24 @@ This repository is a local dashboard for a TP-Link Tapo H500. It lists paired ca
 
 TP-Link does not publish an official local API. All work relies on community reverse-engineered libraries and protocols. These are actively maintained but can occasionally break with firmware updates.
 
+## Screenshots
+
+![Cameras & Recordings page (light mode)](images/screenshots/PairedCamerasAndDoorbells-light.png)
+
+*Cameras & Recordings page (light mode)*
+
+![Cameras & Recordings page (dark mode)](images/screenshots/PairedCamerasAndDoorbells-dark.png)
+
+*Cameras & Recordings page (dark mode)*
+
+![Multi-view live page](images/screenshots/Multiview-dark.png)
+
+*Multi-view live page*
+
+![Devices page with bulb and power-strip controls](images/screenshots/Devices-dark.png)
+
+*Devices page with bulb and power-strip controls*
+
 ## Core Goals (Tapo Phase)
 
 - Discover Tapo devices on the local network
