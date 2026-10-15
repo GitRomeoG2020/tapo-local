@@ -4,8 +4,10 @@
 <h1>{{ recordings.device.name }}</h1>
 <p class="meta muted">
   <span>Model {{ recordings.device.model }}</span>
-  ·
-  <span>Hub storage: {{ recordings.device.hub_storage }}</span>
+  {% if recordings.device.hub_storage_label %}
+    ·
+    <span>Hub storage: {{ recordings.device.hub_storage_label }}</span>
+  {% endif %}
 </p>
 
 <h2>Recording days</h2>

@@ -24,7 +24,9 @@
           <div class="meta">
             <span>Model {{ device.model }}</span>
             <span>Battery {{ device.battery_label }}</span>
-            <span class="status{% if device.hub_storage != 'on' %} off{% endif %}">Hub storage: {{ device.hub_storage }}</span>
+            {% if device.hub_storage_label %}
+              <span class="status{% if device.hub_storage_label != 'on' %} off{% endif %}">Hub storage: {{ device.hub_storage_label }}</span>
+            {% endif %}
           </div>
         </a>
       </article>

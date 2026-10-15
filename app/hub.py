@@ -9,6 +9,7 @@ again once, and the same request is tried again. A rejected password is not
 retried.
 """
 
+import logging
 import os
 import re
 import shutil
@@ -25,9 +26,25 @@ if str(ROOT) not in sys.path:
 
 import scripts.h500_poc as poc
 
+# stderr, not the uvicorn logger tree, so a missing hub-storage field is
+# visible under systemd as well as a local console.
+_hub_log = logging.getLogger("tapo.hub")
+_hub_log.setLevel(logging.INFO)
+if not _hub_log.handlers:
+    _hub_handler = logging.StreamHandler(sys.stderr)
+    _hub_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    _hub_log.addHandler(_hub_handler)
+_hub_log.propagate = False
+
 # Tapo device ids are hex. Reject anything else before it reaches a file path
 # or a hub request that came from the query string.
 _DEVICE_ID = re.compile(r"^[A-Fa-f0-9]{8,64}$")
+
+# ``hub_storage_enabled`` is a field of ``get_general_device_list``.
+# ``get_child_device_list_json`` is the list this dashboard prefers, and that
+# payload does not include the flag. These are the only names treated as the
+# on/off value. A nearby key such as ``plan_24h_record`` is a different setting.
+_STORAGE_FIELDS = ("hub_storage_enabled", "hubStorageEnabled", "storage_status")
 
 
 class HubError(Exception):
@@ -58,6 +75,17 @@ class Device:
     hub_storage: str
     kind: str = "camera"
     battery: int | None = None
+
+    @property
+    def hub_storage_label(self) -> str:
+        """``on`` or ``off`` when the hub reported it, else empty.
+
+        ``not reported`` stays on the object so a later list can still tell
+        a missing flag from a real value. The pages leave that case blank.
+        """
+        if self.hub_storage in (None, "", "not reported"):
+            return ""
+        return self.hub_storage
 
     @property
     def battery_label(self) -> str:
@@ -260,6 +288,96 @@ def storage_label(value) -> str:
     return "on" if value else "off"
 
 
+def _raw_from_mapping(data: dict):
+    """Hub-storage flag on this object or one nested object, else None."""
+    value = poc.first_value(data, *_STORAGE_FIELDS)
+    if value is not None:
+        return value
+    for child in data.values():
+        if isinstance(child, dict):
+            value = poc.first_value(child, *_STORAGE_FIELDS)
+            if value is not None:
+                return value
+    return None
+
+
+def raw_hub_storage(source):
+    """``hub_storage_enabled`` from a child row or a general-list entry.
+
+    Missing means the payload did not report whether the hub stores this
+    camera. Callers keep that as ``not reported`` and the pages omit it.
+    """
+    if isinstance(source, dict):
+        return _raw_from_mapping(source)
+    value = poc.first_value(source, *_STORAGE_FIELDS)
+    if value is not None:
+        return value
+    data = poc.as_dict(source)
+    if data:
+        return _raw_from_mapping(data)
+    return None
+
+
+def _storage_like_keys(node, depth: int = 0) -> set[str]:
+    """Names that mention storage or an SD card. Values are not collected."""
+    found: set[str] = set()
+    if depth > 3 or not isinstance(node, dict):
+        return found
+    for key, value in node.items():
+        text = str(key).lower().replace("-", "_")
+        if any(part in text for part in ("storage", "sd_card", "sdcard", "sd_status")):
+            found.add(str(key))
+        if isinstance(value, dict):
+            found.update(_storage_like_keys(value, depth + 1))
+        elif isinstance(value, list):
+            for child in value:
+                if isinstance(child, dict):
+                    found.update(_storage_like_keys(child, depth + 1))
+    return found
+
+
+_logged_missing_storage = False
+
+
+def note_missing_hub_storage(cameras: list[Device], rows: list[dict]) -> None:
+    """Log once per process when those cameras have no hub-storage flag.
+
+    ``get_child_device_list_json`` does not include ``hub_storage_enabled``.
+    ``get_general_device_list`` does, and on an H500 that list is often
+    empty, so the pages would otherwise say "not reported". The note lists
+    any other storage-like key names from the child rows and no device ids
+    or values.
+    """
+    global _logged_missing_storage
+    missing = [camera.device_id for camera in cameras if camera.hub_storage == "not reported"]
+    if not missing or _logged_missing_storage:
+        return
+    keys: set[str] = set()
+    missing_ids = set(missing)
+    saw_row = False
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        device_id = str(poc.first_value(row, "device_id", "deviceId") or "")
+        if device_id and device_id not in missing_ids:
+            continue
+        saw_row = True
+        keys.update(_storage_like_keys(row))
+    if rows and not saw_row:
+        detail = "no child row matched those cameras"
+    else:
+        detail = ", ".join(sorted(keys)) if keys else "none"
+    _logged_missing_storage = True
+    _hub_log.info(
+        "Hub storage omitted for %s camera(s). Those child rows have no "
+        "hub_storage_enabled, hubStorageEnabled, or storage_status, and "
+        "get_general_device_list did not supply one. Storage-like keys on "
+        "those rows: %s.",
+        len(missing),
+        detail,
+    )
+
+
 def _require_device_id(device_id: str) -> str:
     if not _DEVICE_ID.fullmatch(device_id or ""):
         raise NotFound("That device id is not valid.")
@@ -349,8 +467,9 @@ def cameras_from_json(
 ) -> list[Device]:
     """Cameras and doorbells in a raw ``get_child_device_list_json`` payload.
 
-    Hub storage is taken from the matching general-list entry when the raw
-    row does not include the flag. Battery is read from the row, then from
+    Hub storage is ``hub_storage_enabled`` on the row, including one nested
+    object, then the matching general-list entry. The child JSON usually
+    omits that flag. Battery is read from the row, then from
     ``battery_by_id`` when the row omits it.
     """
     cameras = []
@@ -364,10 +483,7 @@ def cameras_from_json(
         if not poc.looks_like_camera(model, str(category)):
             continue
         seen.add(device_id)
-        raw_storage = poc.first_value(
-            row, "hub_storage_enabled", "hubStorageEnabled", "storage_status"
-        )
-        storage = storage_label(raw_storage)
+        storage = storage_label(raw_hub_storage(row))
         if storage == "not reported":
             storage = storage_by_id.get(device_id, "not reported")
         name = poc.display_name(poc.first_value(row, "alias", "nickname", "name"))
@@ -392,9 +508,9 @@ def cameras_from_general(devices) -> tuple[list[Device], dict[str, str]]:
         device_id = poc.first_value(device, "device_id") or poc.first_value(data, "device_id")
         if not device_id:
             continue
-        storage = getattr(device, "hub_storage_enabled", None)
-        if storage is None:
-            storage = data.get("hub_storage_enabled")
+        storage = raw_hub_storage(device)
+        if storage is None and data:
+            storage = raw_hub_storage(data)
         label = storage_label(storage)
         storage_by_id[str(device_id)] = label
         name = poc.display_name(
@@ -437,12 +553,17 @@ def cameras_from_children(
             poc.first_value(device, "nickname", "alias")
             or poc.first_value(data, "nickname", "alias")
         )
+        storage = storage_label(raw_hub_storage(device))
+        if storage == "not reported" and data:
+            storage = storage_label(raw_hub_storage(data))
+        if storage == "not reported":
+            storage = storage_by_id.get(str(device_id), "not reported")
         cameras.append(
             Device(
                 name,
                 str(model or "(unknown model)"),
                 str(device_id),
-                storage_by_id.get(str(device_id), "not reported"),
+                storage,
                 battery=_camera_battery(device, str(device_id), battery_by_id),
             )
         )
@@ -675,7 +796,9 @@ class HubSession:
             }
             json_cameras = cameras_from_json(json_rows, storage_by_id, battery_by_id)
             if json_cameras:
-                return choose_cameras(json_cameras, general_cameras, [])
+                chosen, source = choose_cameras(json_cameras, general_cameras, [])
+                note_missing_hub_storage(chosen, json_rows)
+                return chosen, source
 
             try:
                 children = await hub.get_child_device_list()
@@ -687,7 +810,9 @@ class HubSession:
             if errors and not json_rows and not general_devices and not children:
                 raise HubError(str(errors[0]))
             child_cameras = cameras_from_children(children, storage_by_id, battery_by_id)
-            return choose_cameras(json_cameras, general_cameras, child_cameras)
+            chosen, source = choose_cameras(json_cameras, general_cameras, child_cameras)
+            note_missing_hub_storage(chosen, json_rows)
+            return chosen, source
 
         cameras, source = await self.call(operation)
         self._camera_count = len(cameras)
